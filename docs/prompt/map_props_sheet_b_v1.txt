@@ -1,0 +1,7 @@
+A sprite sheet of 4 columns and 2 rows, equal cells, wide pure white gutters, each cell holds one isolated object centered with empty white space around it. Thick dark-ink outlines, flat storybook colors, two-step shadow, high three-quarter view, same drawing method as the reference camp.
+
+Row one left to right: one dead gray tree with bare branches and a visible trunk; a low bush with tomato-red berries; a tiny cabbage-green garden plot in a wooden frame; a pile of broken red bricks and concrete.
+
+Row two left to right: a wrecked car the color of old iron, rusted and windowless; a stack of cut logs; a row of six galvanized buckets; a short wooden plank weir with water spilling over one edge.
+
+Each object stands alone on white. Pure illustration.

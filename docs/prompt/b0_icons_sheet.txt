@@ -1,0 +1,13 @@
+A square 1:1 3x3 icon sheet containing 9 separate casual mobile-game item and navigation icons on a plain solid pure white background (#FFFFFF), arranged in 3 equal columns and 3 equal rows with wide pure white margins around every icon. Chunky 2.5D sticker illustration style with thick rounded dark espresso-brown outer outlines (#18120E), glossy top-left highlights, and vibrant readable colors.
+
+Row 1 Left (Bottlecap Gold Coin): A shiny golden-yellow crimped bottlecap coin (#FFC436) with a stamped star emblem in the center and bright specular glints.
+Row 1 Center (Energy Crystal Gem): A faceted glowing cyan-blue crystal prism (#38B6FF) with bright icy-white highlights.
+Row 1 Right (Prime Raw Meat Cut): A plump bone-in cartoon steak roast with rich coral-red meat (#E84A43), cream bone tip, and glossy marbling.
+
+Row 2 Left (Smoked Roast Ribs): Glossy honey-amber barbecued ribs (#E07A28) glazed with rich caramel sauce on a small wooden board.
+Row 2 Center (Purified Water Jug): A clear rounded survival canteen filled with bright sky-blue water (#4BB3FD) and a yellow cap.
+Row 2 Right (Scrap Timber & Gear): Two warm oak wooden planks crossed with a shiny steel cogwheel (#7B8C9E) tied with rope.
+
+Row 3 Left (Blueprint Scroll): A rolled sky-blue engineering blueprint scroll (#2C9FE2) tied with a golden-yellow ribbon.
+Row 3 Center (Hero Helmet Emblem): A heroic golden-yellow tactical visor helmet (#F5B82E) with a red crest star.
+Row 3 Right (Wasteland Explorer Compass Gun): A crossed red flare pistol (#EE4338) and brass wasteland compass emblem.

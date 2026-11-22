@@ -1,0 +1,13 @@
+A square 1:1 2x2 grid sheet containing 4 separate 2D game buildings on a plain solid pure white background (#FFFFFF), arranged cleanly in 2 columns and 2 rows with generous pure white margins around each building. Seen from a consistent 3/4 isometric-like high angle, drawn in bold humorous American wasteland comic style with crisp even dark espresso-brown outer ink outlines (#18120E), cel-shaded volume, warm specular highlights, and cozy lived-in details.
+
+Top-left cell (Command School Bus HQ):
+A double-decker survivor headquarters built from a vintage school-bus golden-yellow bus (#F2B632) reinforced with riveted copper-brown sheet metal plates (#9E5834), a spinning silver satellite dish on the roof, a patched cream canvas sun awning shading a wooden planning table in front, and warm amber cabin windows.
+
+Top-right cell (Wasteland Smokehouse Kitchen):
+A cozy wasteland barbecue smokehouse built from warm terracotta red bricks (#C85A3A) and a repurposed dark iron barrel smoker, with a patched olive-green canvas roof, glossy amber-roasted meat ribs hanging on a wooden rack, and a warm glowing orange cooking fire inside the hearth.
+
+Bottom-left cell (Hunter Watchtower):
+A sturdy survivor lookout tower made of warm rough-hewn timber logs (#A87042) and corrugated tin sheets, topped with a lookout platform featuring brass binoculars, a bright yellow searchlight, a camouflage leaf net, and wooden supply crates stacked neatly at the base.
+
+Bottom-right cell (Water Distillation Station):
+A clever wasteland water purifier featuring a large clear glass tank filled with sparkling sky-blue fresh water (#4BB3FD), shiny new-penny copper distillation coils (#D97B38), a sturdy riveted iron base, and two bright blue water jugs sitting on a wooden pallet.

@@ -1,0 +1,13 @@
+A square 1:1 2x2 grid sheet containing 2 camp structures on the top row and 2 cheerful chibi wasteland survivor villagers on the bottom row, on a plain solid pure white background (#FFFFFF) with wide pure white spacing around every item. Consistent 3/4 high-angle game view, bold American wasteland comic illustration style with crisp dark espresso-brown outer ink outlines (#18120E) and vibrant cel-shaded colors.
+
+Top-left cell (Survivor Patchwork Tent House):
+A cozy A-frame survivor cabin tent stitched from warm sand-beige canvas (#E8D2AE) and sage-green tarp (#7DA668), with a corrugated metal porch roof, a rolled orange sleeping bag by the entrance, and a warm glowing string of tiny yellow bulbs hanging across the front.
+
+Top-right cell (Construction Foundation Pad):
+An active building construction plot seen from 3/4 angle: a neat oval wooden stake perimeter connected by yellow-and-black striped caution tape enclosing tamped sandy ground, a small red metal toolbox, a stack of wooden planks, and a wooden mallet resting inside.
+
+Bottom-left cell (Chibi Wasteland Mechanic Worker):
+A lively 2.5-head-tall chibi survivor mechanic walking in 3/4 view, wearing blue denim overalls, brass aviator goggles pushed up on rusty-orange hair, carrying a stack of wooden planks and holding a shiny silver wrench with an energetic grin.
+
+Bottom-right cell (Chibi Napping Survivor):
+A funny 2.5-head-tall rotund bald survivor with a bushy brown beard taking a cozy nap leaning against an old rubber tire, wearing a patched tan vest, belly rising peacefully with a happy sleeping smile.

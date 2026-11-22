@@ -1,0 +1,8 @@
+Four isometric ground diamonds in one horizontal row, separated by wide pure white space. Each diamond is exactly twice as wide as it is tall, a flat 2:1 isometric tile, thick dark-ink outline along the diamond edge, flat storybook color.
+
+First diamond: packed dirt the color of dry wheat straw mixed with sidewalk-gray pebbles and a few dark cracks.
+Second diamond: the same dirt covered with short dry straw tufts, brighter wheat-straw yellow.
+Third diamond: a creek crossing the diamond, water the color of milky tea with a sky-blue sheen, dirt banks toward the left and right corners.
+Fourth diamond: a flat scatter of broken red bricks and gray concrete on the diamond.
+
+The four corners outside every diamond are pure white. Each diamond is large, centered, and clearly separated from the next.

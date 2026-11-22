@@ -1,0 +1,7 @@
+A sprite sheet of 4 columns and 2 rows, equal cells, wide pure white gutters, each cell holds one isolated object centered with empty white space around it. Thick dark-ink outlines, flat storybook colors, two-step shadow, high three-quarter view, same drawing method as the reference camp.
+
+Row one left to right: a small worn school-bus-yellow command bus with a white roof dish; a wooden smokehouse shack with a kerosene-orange stove glow and a thin smoke wisp; two galvanized water drums with a hand pump; two small big-head survivors standing side by side, one red tank top and one faded yellow vest.
+
+Row two left to right: an empty rectangular foundation of fresh lumber planks with a hammer on it; a tall wooden hunting watchtower; one dark pine green conifer with a visible trunk; one dusty olive broadleaf tree with a visible trunk.
+
+Each object stands alone on white. Pure illustration.

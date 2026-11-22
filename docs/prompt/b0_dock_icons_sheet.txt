@@ -1,0 +1,6 @@
+A square 1:1 2x2 icon sheet containing 4 separate casual mobile-game navigation and feature icons on a plain solid pure white background (#FFFFFF), arranged in 2 equal columns and 2 equal rows with wide pure white margins around every icon. Use the attached icon sheet strictly for its chunky 2.5D sticker rendering style, thick dark espresso-brown outer outlines (#18120E), glossy top-left specular highlights, and vibrant cel-shaded colors.
+
+Top-left cell (Camp Home Tab Icon): A cute chunky miniature yellow survivor cabin with a corrugated copper-brown roof, a warm glowing lantern window, and a tiny wooden fence.
+Top-right cell (Survivor Orders Clipboard Icon): A warm oak wooden clipboard holding cream request paper with two green checkmarks and a shiny gold wax seal stamp at the bottom corner.
+Bottom-left cell (Mutant Boss Trial Tab Icon): A bold charismatic purple armored mutant boar emblem with shiny gold-coin yellow tusks and glowing amber eyes.
+Bottom-right cell (Wasteland Convoy Tab Icon): A chunky armored off-road buggy wheel and golden wing badge with glossy highlights.

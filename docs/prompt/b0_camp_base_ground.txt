@@ -1,0 +1,9 @@
+A portrait 3:4 2D mobile game ground-only base map seen from a high 3/4 isometric-like bird's-eye angle, drawn in bold American wasteland comic hand-painted illustration style with crisp dark espresso-brown ink lines (#18120E) and warm muted desert colors.
+
+The entire frame is a continuous, open, flat ground terrain of an abandoned highway rest-stop clearing in a sunny arid canyon:
+- The central area is a wide, flat, compacted warm sandy-ochre dirt courtyard (#D8C19C) with subtle pebble grain and soft sunlit patches (#E6D3B3), completely open and clear across the middle as foundation ground.
+- Running diagonally across the lower-left toward the upper-right is a weathered slate-grey asphalt road (#6B665E) with faded warm-yellow dashed lane stripes and subtle surface cracks and tire tracks.
+- Around the outer edges of the frame sit low weathered red-sandstone ledges (#B87A56), dry golden-tan desert scrub grass tufts, and smooth dusty boulders framing the clearing naturally.
+- Six subtle lighter tamped-earth flat rectangular and oval foundation pads sit cleanly flush with the sandy ground around the courtyard.
+
+Flat cel-shaded comic coloring with soft hand-painted marker gradients, low-saturation warm earthy base palette, clean readable ground surface only from edge to edge, pure top-down 3/4 strategy simulation ground terrain.
