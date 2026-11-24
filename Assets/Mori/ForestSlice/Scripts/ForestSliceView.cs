@@ -608,6 +608,49 @@ namespace Mori.ForestSlice
             LayoutFog();
         }
 
+        /// <summary>当主角走到南侧/前排树冠后方时，自动将遮挡主角的 1~2 棵林缘树半透明化，既能贴树根行走又不挡视线。</summary>
+        public void UpdateHeroCanopyFade(Vector2 heroWorld, float dt)
+        {
+            float k = Mathf.Clamp01(dt * 10f);
+            foreach (var kv in _cellTrees)
+            {
+                List<TreeInst> list = kv.Value;
+                if (list.Count == 0) continue;
+                Vector3 c0 = list[0].tr != null ? list[0].tr.localPosition : Vector3.zero;
+                if (Mathf.Abs(c0.x - heroWorld.x) > 1.8f || Mathf.Abs(c0.y - heroWorld.y) > 2.4f)
+                {
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        SpriteRenderer sr = list[i].sr;
+                        if (sr != null && sr.color.a < 0.995f)
+                        {
+                            Color col = sr.color;
+                            col.a = Mathf.MoveTowards(col.a, 1f, k);
+                            sr.color = col;
+                        }
+                    }
+                    continue;
+                }
+
+                for (int i = 0; i < list.Count; i++)
+                {
+                    TreeInst t = list[i];
+                    if (t.tr == null || t.sr == null || !t.tr.gameObject.activeSelf) continue;
+                    Vector3 tp = t.tr.localPosition;
+                    bool occludingHero = tp.y < heroWorld.y - 0.02f &&
+                                         (heroWorld.y - tp.y) < 1.52f &&
+                                         Mathf.Abs(tp.x - heroWorld.x) < 0.58f;
+                    float targetA = occludingHero ? 0.45f : 1f;
+                    Color c = t.sr.color;
+                    if (Mathf.Abs(c.a - targetA) > 0.004f)
+                    {
+                        c.a = Mathf.MoveTowards(c.a, targetA, k);
+                        t.sr.color = c;
+                    }
+                }
+            }
+        }
+
         public void Tick(float dt)
         {
             _t += dt;

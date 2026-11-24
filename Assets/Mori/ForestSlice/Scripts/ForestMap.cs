@@ -132,7 +132,42 @@ namespace Mori.ForestSlice
                     _delay[x, y] = (float)rng.NextDouble() * 0.38f;
                 }
             }
+            SweepOrphanForestIslands(instant: false, rng);
             return true;
+        }
+
+        /// <summary>迭代清扫被已开垦空地三面或四面包围的孤立残树格，杜绝拓荒后营地中央残留单排孤树岛！</summary>
+        public int SweepOrphanForestIslands(bool instant, System.Random rng = null)
+        {
+            int swept = 0;
+            bool passChanged = true;
+            while (passChanged)
+            {
+                passChanged = false;
+                for (int x = 1; x < N - 1; x++)
+                {
+                    for (int y = 1; y < N - 1; y++)
+                    {
+                        if (target[x, y] < 0.5f) continue;
+                        int clearedNeighbors = 0;
+                        if (IsCleared(x - 1, y)) clearedNeighbors++;
+                        if (IsCleared(x + 1, y)) clearedNeighbors++;
+                        if (IsCleared(x, y - 1)) clearedNeighbors++;
+                        if (IsCleared(x, y + 1)) clearedNeighbors++;
+                        if (clearedNeighbors >= 3)
+                        {
+                            target[x, y] = 0f;
+                            if (instant)
+                                forest[x, y] = 0f;
+                            else if (rng != null)
+                                _delay[x, y] = 0.12f + (float)rng.NextDouble() * 0.22f;
+                            swept++;
+                            passChanged = true;
+                        }
+                    }
+                }
+            }
+            return swept;
         }
 
         public bool Tick(float dt)

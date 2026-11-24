@@ -45,11 +45,28 @@ namespace Mori.ForestSlice
             get
             {
                 if (_font != null) return _font;
+                _font = Resources.Load<Font>("Fonts/MoriBold");
+                if (_font != null) return _font;
                 string[] candidates = { "PingFang SC", "Heiti SC", "Hiragino Sans GB", "Microsoft YaHei", "Arial Unicode MS", "Arial" };
                 _font = Font.CreateDynamicFontFromOSFont(candidates, 24);
                 if (_font == null) _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
                 if (_font == null) _font = Resources.GetBuiltinResource<Font>("Arial.ttf");
                 return _font;
+            }
+        }
+
+        public static void ApplyRuntimeFont(Font runtimeFont)
+        {
+            if (runtimeFont == null) return;
+            _font = runtimeFont;
+            var allTexts = Resources.FindObjectsOfTypeAll<UnityEngine.UI.Text>();
+            for (int i = 0; i < allTexts.Length; i++)
+            {
+                if (allTexts[i] != null && allTexts[i].gameObject.scene.IsValid())
+                {
+                    allTexts[i].font = runtimeFont;
+                    allTexts[i].SetAllDirty();
+                }
             }
         }
 
@@ -200,6 +217,12 @@ namespace Mori.ForestSlice
                 case SurvRes.Ration: key = "ico_ration"; break;
                 case SurvRes.Parts: key = "ico_parts"; break;
                 case SurvRes.Blueprint: key = "ico_blueprint"; break;
+                case SurvRes.HeroMedal: key = "ico_hero_medal"; break;
+                case SurvRes.SeedVeggie: key = "ico_seed_veggie"; break;
+                case SurvRes.SeedFlax: key = "ico_seed_flax"; break;
+                case SurvRes.SeedHerb: key = "ico_seed_herb"; break;
+                case SurvRes.SeedGolden: key = "ico_seed_golden"; break;
+                case SurvRes.Compost: key = "ico_compost"; break;
             }
             Sprite art = GetArt(key, null);
             if (art != null) return art;
@@ -209,6 +232,26 @@ namespace Mori.ForestSlice
                 ProcResIcons[r] = proc;
             }
             return proc;
+        }
+
+        public static Color32 RarityColor(HeroRarity r)
+        {
+            switch (r)
+            {
+                case HeroRarity.Legendary: return new Color32(238, 146, 32, 255); // 橙 SSR
+                case HeroRarity.Epic: return new Color32(162, 74, 228, 255);      // 紫 SR
+                default: return new Color32(58, 134, 228, 255);                   // 蓝 R
+            }
+        }
+
+        public static Sprite RarityButtonSprite(HeroRarity r)
+        {
+            switch (r)
+            {
+                case HeroRarity.Legendary: return BtnOrange;
+                case HeroRarity.Epic: return BtnBlue;
+                default: return BtnBlue;
+            }
         }
 
         public static Sprite NodePreviewSprite(CampNode n)
@@ -239,6 +282,8 @@ namespace Mori.ForestSlice
                     return GetArt("herb_hut", GetArt("tent"));
                 case NodeKind.Farm:
                     return GetArt("farm_2");
+                case NodeKind.Ranch:
+                    return GetArt("beast_ranch", GetArt("boar", GetArt("hunter_tower")));
                 case NodeKind.Watchtower:
                     return GetArt("hunter_tower");
                 case NodeKind.Barricade:
@@ -322,6 +367,7 @@ namespace Mori.ForestSlice
                 case SurvRes.WarmTea: main = new Color32(216, 132, 48, 255); sub = new Color32(252, 218, 152, 255); motif = 5; break;
                 case SurvRes.MedKit: main = new Color32(226, 62, 58, 255); sub = new Color32(255, 250, 246, 255); motif = 5; break;
                 case SurvRes.WoodBed: main = new Color32(166, 108, 58, 255); sub = new Color32(236, 224, 196, 255); motif = 6; break;
+                case SurvRes.HeroMedal: main = new Color32(238, 168, 38, 255); sub = new Color32(255, 240, 172, 255); motif = 0; break;
             }
 
             Color ink = new Color32(26, 20, 15, 255);

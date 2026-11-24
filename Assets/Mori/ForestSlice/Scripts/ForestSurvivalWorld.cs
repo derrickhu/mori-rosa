@@ -36,14 +36,72 @@ namespace Mori.ForestSlice
         {
             public bool isZombie;
             public bool isHordeRaid;
+            public bool isBoss;
+            public bool isRunner;
             public string label;
             public float gx, gy;
             public float targetGx, targetGy;
+            public float hp = 40f;
+            public float maxHp = 40f;
+            public float moveSpeed = 0.7f;
+            public float hitFlashTimer;
+            public float stunTimer;
+            public float gnawCooldown;
             public float timer;
             public float phase;
             public Transform tr;
             public SpriteRenderer sr;
             public Transform shadowTr;
+        }
+
+        public sealed class VillagerActor
+        {
+            public int index;
+            public int kindIdx; // 0..3 -> villager_0..3
+            public float gx, gy;
+            public float targetGx, targetGy;
+            public float pauseTimer;
+            public float cheerTimer;
+            public float phase;
+            public string chatterText;
+            public float chatterTimer;
+            public Transform tr;
+            public SpriteRenderer sr;
+            public Transform shadowTr;
+        }
+
+        public sealed class SquadCombatSlot
+        {
+            public HeroSpec hero;
+            public Walker walker;
+            public Vector2 defensePos;
+            public float atkTimer;
+            public float rage; // 0..100
+        }
+
+        public sealed class CombatProjectile
+        {
+            public Transform tr;
+            public SpriteRenderer sr;
+            public Vector3 fromWorld;
+            public Vector3 toWorld;
+            public WildActor target;
+            public float damage;
+            public bool piercing;
+            public bool spin;
+            public float t;
+            public float dur;
+        }
+
+        public sealed class FireHazardZone
+        {
+            public Transform tr;
+            public SpriteRenderer sr;
+            public float gx, gy;
+            public float radius;
+            public float dps;
+            public float life;
+            public float tickTimer;
         }
 
         public sealed class GroundPile
@@ -52,6 +110,8 @@ namespace Mori.ForestSlice
             public float gx, gy;
             public int amount;
             public bool queued;
+            public string salvageNodeId;
+            public string customBubbleLabel;
             public Rect visualRect;
             public GameObject go;
             public GameObject shadowGo;
@@ -78,12 +138,15 @@ namespace Mori.ForestSlice
         public sealed class Walker
         {
             public int index;
+            public string heroId;
             public string characterId;
             public float gx, gy;
             public float targetGx, targetGy;
             public Vector2 patrolA, patrolB;
             public bool headingToB;
             public bool hasManualMove;
+            public int avoidSide;
+            public float manualDriveHold;
             public float pauseTimer;
             public float cheerTimer;
             public float phase;
@@ -104,6 +167,55 @@ namespace Mori.ForestSlice
         public readonly List<GroundPile> GroundPiles = new List<GroundPile>();
         public readonly List<ChopTask> ChopQueue = new List<ChopTask>();
         public readonly List<Walker> Walkers = new List<Walker>();
+        public readonly List<VillagerActor> CivilianVillagers = new List<VillagerActor>();
+        public readonly List<SquadCombatSlot> SquadSlots = new List<SquadCombatSlot>();
+        public readonly List<CombatProjectile> Projectiles = new List<CombatProjectile>();
+        public readonly List<FireHazardZone> FireZones = new List<FireHazardZone>();
+
+        // 独立策略战场控制器（《疯狂水世界》式 3×3 九宫格零树木遮挡战斗舞台）
+        public ForestTacticalArena Arena { get; private set; }
+        public bool InWaveDefense => Arena != null && Arena.IsBattleActive;
+        public bool IsWaveDefenseActive => InWaveDefense;
+
+        public bool WaveAutoUlt
+        {
+            get => Arena == null || Arena.AutoCastUlt;
+            set { if (Arena != null) Arena.AutoCastUlt = value; }
+        }
+
+        public bool AutoCastUlt
+        {
+            get => WaveAutoUlt;
+            set => WaveAutoUlt = value;
+        }
+
+        public int WaveSpeedMul => Arena != null ? Arena.SpeedMultiplier : 1;
+
+        public float WaveTimeScale
+        {
+            get => WaveSpeedMul;
+            set
+            {
+                if (Arena != null && ((value > 1.4f) != (Arena.SpeedMultiplier == 2)))
+                    Arena.ToggleSpeed();
+            }
+        }
+
+        public HordeWaveSpec ActiveWaveSpec;
+        public float BarricadeHp;
+        public float BarricadeMaxHpCached;
+        public int WaveSpawnPending;
+        public float WaveSpawnTimer;
+        public int WaveTotalZombies;
+        public int WaveKilledZombies;
+        public float TeamAtkSpeedBuffTimer;
+        public WildActor ActiveBossZombie;
+
+        public event System.Action<bool, HordeWaveSpec> OnWaveDefenseEnded;
+        public event System.Action<Vector3, int, bool> OnCombatDamageNumber;
+
+        public bool HasDamageNumberListeners => OnCombatDamageNumber != null;
+        public void RaiseCombatDamageNumber(Vector3 worldPos, int dmg, bool isCrit) => OnCombatDamageNumber?.Invoke(worldPos, dmg, isCrit);
 
         readonly System.Random _rng = new System.Random(99);
         Transform _actorRoot;
@@ -151,33 +263,82 @@ namespace Mori.ForestSlice
             "早晚把这破卫衣换成防刮皮夹克！"
         };
 
-        public ForestSurvivalWorld(ForestSliceView view, ForestSurvivalSim sim)
+        public ForestSurvivalWorld(ForestSliceView view, ForestSurvivalSim sim, Camera cam = null)
         {
             View = view;
             Sim = sim;
             _actorRoot = new GameObject("L4_DynamicActors").transform;
             _actorRoot.SetParent(view.transform.GetChild(0), false);
+            Arena = new ForestTacticalArena(cam != null ? cam : Camera.main, sim, this);
 
             for (int i = 0; i < Sim.Nodes.Count; i++)
             {
                 CampNode n = Sim.Nodes[i];
-                View.OccupyCells(n.occupyX, n.occupyY, n.occupyW, n.occupyH);
+                if (n.state != NodeState.HiddenInForest || n.siteUncovered)
+                    View.OccupyCells(n.occupyX, n.occupyY, n.occupyW, n.occupyH);
             }
 
             View.CanPlaceStumpFilter = (sx, sy) => !OverlapsAnyBuildingOrPile(ForestSliceView.Iso(sx, sy), 0.30f, 0.28f);
 
             Sim.OnNodeVisualChanged += RefreshNodeVisual;
+            Sim.OnNodeForestUncovered += OnNodeForestUncovered;
             Sim.OnNodeHammeredComplete += OnNodeHammered;
             Sim.OnHeroSkinChanged += OnHeroSkinChanged;
-            Sim.OnHeroUnlocked += _ => SyncSurvivorWalkers();
+            Sim.OnHeroUnlocked += _ => { SyncSurvivorWalkers(); RefreshWalkerDelegationStations(); };
+            Sim.OnDelegationChanged += RefreshWalkerDelegationStations;
+            Sim.OnCampLevelUp += (_, __) =>
+            {
+                if (Walkers.Count > 0 && Walkers[0].puppet != null)
+                    Walkers[0].puppet.SetSkinTier(Sim.MaxUnlockedSkinTier, autoFallbackToBase: true);
+            };
+        }
+
+        static PuppetRigProfile _leimengRigProfile;
+
+        /// <summary>解析幸存者骨干伙伴专属模型档案（严禁同伴回退为领主主角阿澈的蓝帽衫模型！雷猛使用专属硬汉猎装形象）。</summary>
+        public static PuppetRigProfile ResolveCompanionRigProfile(string heroId, string characterId)
+        {
+            if (heroId == "leimeng" || characterId == "hunter" || characterId == "leimeng")
+            {
+                if (_leimengRigProfile == null)
+                {
+                    _leimengRigProfile = new PuppetRigProfile
+                    {
+                        characterId = "hunter",
+                        displayName = "雷猛",
+                        singleBodySpriteKey = "villager_0",
+                        baseScale = 0.68f,
+                        showGroundRing = false,
+                        ringTint = new Color(1f, 0.58f, 0.24f, 0.85f),
+                        slashTint = new Color(1f, 0.78f, 0.34f, 1f),
+                        toolStyle = ToolAnimStyle.HatchetCleave,
+                        tiers = new[]
+                        {
+                            new OutfitTierDef { tier = OutfitTier.Refugee, requireShelterLv = 1, tierName = "荒野猎装", atlasKey = "dachui_puppet_atlas", bustKey = "bust_vil_0" },
+                            new OutfitTierDef { tier = OutfitTier.Reinforced, requireShelterLv = 2, tierName = "重装巡林服", atlasKey = "dachui_puppet_atlas", bustKey = "bust_vil_0" },
+                            new OutfitTierDef { tier = OutfitTier.Armored, requireShelterLv = 3, tierName = "狂风破障甲", atlasKey = "dachui_puppet_atlas", bustKey = "bust_vil_0" },
+                        }
+                    };
+                }
+                return _leimengRigProfile;
+            }
+
+            string key = !string.IsNullOrEmpty(characterId) ? characterId : heroId;
+            if (string.IsNullOrEmpty(key) || key == "ache")
+                return PuppetRegistry.GetProfile("dachui");
+
+            PuppetRigProfile prof = PuppetRegistry.GetProfile(key);
+            if (prof == null || prof.characterId == "ache")
+                return PuppetRegistry.GetProfile("dachui");
+            return prof;
         }
 
         void OnHeroSkinChanged(HeroSpec h, OutfitTier tier)
         {
             if (h == null) return;
-            for (int i = 0; i < Walkers.Count; i++)
+            for (int i = 1; i < Walkers.Count; i++)
             {
-                if (Walkers[i].characterId == h.characterId && Walkers[i].puppet != null)
+                if ((Walkers[i].heroId == h.id || Walkers[i].characterId == h.characterId) && Walkers[i].puppet != null)
                 {
                     Walkers[i].puppet.SetSkinTier(tier, autoFallbackToBase: true);
                     Walkers[i].cheerTimer = 0.85f;
@@ -190,32 +351,197 @@ namespace Mori.ForestSlice
         {
             Sim.SyncRevealedNodes(View.Map, silent: true);
             for (int i = 0; i < Sim.Nodes.Count; i++)
-                RefreshNodeVisual(Sim.Nodes[i]);
+            {
+                CampNode n = Sim.Nodes[i];
+                RefreshNodeVisual(n);
+                if (n.siteUncovered && n.requiresSiteSalvage && !n.siteSalvageCleared && FindSalvagePileForNode(n.id) == null)
+                    SpawnSiteSalvagePile(n, playBurst: false);
+            }
             SyncSurvivorWalkers();
 
             if (spawnStarterPiles)
             {
-                // 仅在开阔营地最外圈林缘点缀 3 处采集物，彻底留空中央大广场供操作与行走！
-                SpawnFieldNode(FieldKind.LogPile, 18.6f, 19.8f, 8);
-                SpawnFieldNode(FieldKind.BerryBush, 12.6f, 19.4f, 4);
-                SpawnFieldNode(FieldKind.ScrapWreck, 16.8f, 12.8f, 6);
+                // 开局在主角(15.8,18.4)南侧开阔草甸放置 2 处醒目原木堆（紧邻 y=15 林缘无遮挡一触即采），并在起步草坪可见林缘点缀浆果丛与废铁残骸
+                SpawnFieldNode(FieldKind.LogPile, 15.2f, 16.2f, 5, allowInnerMeadow: true);
+                SpawnFieldNode(FieldKind.LogPile, 17.6f, 16.4f, 5, allowInnerMeadow: true);
+                SpawnFieldNode(FieldKind.BerryBush, 12.6f, 20.6f, 4, allowInnerMeadow: true);
+                SpawnFieldNode(FieldKind.ScrapWreck, 19.6f, 15.8f, 6, allowInnerMeadow: true);
             }
             else
             {
-                // 中后期场景也仅在外围林缘点缀两处生态采集物
-                SpawnFieldNode(FieldKind.BerryBush, 11.4f, 17.6f, 3);
-                SpawnFieldNode(FieldKind.ScrapWreck, 20.6f, 13.2f, 6);
+                // 中后期场景仅在远离建筑的外圈已开垦林缘点缀两处生态采集物，绝不刷进未砍密林！
+                if (TryPickOuterResourceEdgeCell(5.5f, out float bx, out float by))
+                    SpawnFieldNode(FieldKind.BerryBush, bx, by, 3);
+                if (TryPickOuterResourceEdgeCell(5.5f, out float sx, out float sy))
+                    SpawnFieldNode(FieldKind.ScrapWreck, sx, sy, 6);
             }
         }
 
-        public void SpawnFieldNode(FieldKind kind, float gx, float gy, int amount)
+        void OnNodeForestUncovered(CampNode n)
         {
+            if (n == null) return;
+            EnsureNodePlotMarginCleared(n);
+            SpawnSiteSalvagePile(n, playBurst: true);
+        }
+
+        void EnsureNodePlotMarginCleared(CampNode n)
+        {
+            if (n == null || View == null || View.Map == null) return;
+            View.OccupyCells(n.occupyX, n.occupyY, n.occupyW, n.occupyH);
+            int x0 = Mathf.Min(n.occupyX - 1, Mathf.FloorToInt(n.gx) - 2);
+            int y0 = Mathf.Min(n.occupyY - 1, Mathf.FloorToInt(n.gy) - 2);
+            int x1 = Mathf.Max(n.occupyX + n.occupyW, Mathf.FloorToInt(n.gx) + 1);
+            int y1 = Mathf.Max(n.occupyY + n.occupyH, Mathf.FloorToInt(n.gy) + 1);
+            View.Map.ClearRectInstant(x0, y0, x1, y1);
+            View.Map.SweepOrphanForestIslands(instant: true);
+            View.Map.RebuildMask();
+            View.RefreshEdges(instant: false);
+            View.DecorateCleared();
+        }
+
+        void SpawnSiteSalvagePile(CampNode n, bool playBurst)
+        {
+            if (n == null || string.IsNullOrEmpty(n.id)) return;
+            if (FindSalvagePileForNode(n.id) != null) return;
+
+            View.OccupyCells(n.occupyX, n.occupyY, n.occupyW, n.occupyH);
+
+            // 若刚砍开的同一位置恰有普通随机采集物，移除普通散件以给专属遗迹发现物腾出干净地基中心！
+            for (int i = GroundPiles.Count - 1; i >= 0; i--)
+            {
+                GroundPile gp = GroundPiles[i];
+                if (!string.IsNullOrEmpty(gp.salvageNodeId)) continue;
+                if (Vector2.Distance(new Vector2(gp.gx, gp.gy), new Vector2(n.gx, n.gy)) < 1.15f)
+                {
+                    if (gp.go != null) DestroyGo(gp.go);
+                    if (gp.shadowGo != null) DestroyGo(gp.shadowGo);
+                    GroundPiles.RemoveAt(i);
+                }
+            }
+
+            Sprite sp;
+            FieldKind kind;
+            float scale = 0.58f;
+            SurvRes bonusRes = n.salvageBonusRes;
+            if (bonusRes == SurvRes.Scrap || bonusRes == SurvRes.Nails || bonusRes == SurvRes.IronIngot || bonusRes == SurvRes.MetalPipe)
+            {
+                sp = ForestArt.Get("prop_scrap_wreck", () => ForestArt.Get("loot_pile", ForestPlaceholderArt.LogPile));
+                kind = FieldKind.ScrapWreck;
+                scale = 0.56f;
+            }
+            else if (bonusRes == SurvRes.Veggie || bonusRes == SurvRes.Herb)
+            {
+                sp = ForestArt.Get("prop_berry_bush", () => ForestArt.Get("loot_pile", ForestPlaceholderArt.LogPile));
+                kind = FieldKind.BerryBush;
+                scale = 0.54f;
+            }
+            else if (bonusRes == SurvRes.Wood)
+            {
+                sp = ForestArt.Get("logs", () => ForestArt.Get("loot_pile", ForestPlaceholderArt.LogPile));
+                kind = FieldKind.LogPile;
+                scale = 0.60f;
+            }
+            else
+            {
+                sp = ForestArt.Get("loot_pile", () => ForestArt.Get("logs", ForestPlaceholderArt.LogPile));
+                kind = FieldKind.LogPile;
+                scale = 0.58f;
+            }
+
+            float gx = n.gx;
+            float gy = n.gy;
+            Vector3 p = ForestSliceView.Iso(gx, gy);
+            Rect visRect = ComputeSpriteWorldRect(sp, p, scale, scale, pad: 0.20f);
+
+            var go = new GameObject("Salvage_" + n.id);
+            go.transform.SetParent(View.ModuleRoot, false);
+            go.transform.localPosition = p;
+            go.transform.localScale = new Vector3(scale, scale, 1f);
+            var sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = sp;
+            sr.sortingOrder = Mathf.RoundToInt(-p.y * 100f) + 1;
+            GameObject sh = View.CreateShadow(gx, gy, 0.58f, 0.48f);
+
+            string label = string.IsNullOrEmpty(n.salvageLabel) ? "林间散落物资" : n.salvageLabel;
+            GroundPiles.Add(new GroundPile
+            {
+                kind = kind,
+                gx = gx,
+                gy = gy,
+                amount = Mathf.Max(1, n.salvageBonusAmt),
+                salvageNodeId = n.id,
+                customBubbleLabel = "收集:" + label,
+                visualRect = visRect,
+                go = go,
+                shadowGo = sh,
+            });
+
+            if (playBurst)
+                View.BurstChips(p + new Vector3(0f, 0.35f, 0f), 18);
+        }
+
+        public GroundPile FindSalvagePileForNode(string nodeId)
+        {
+            if (string.IsNullOrEmpty(nodeId)) return null;
+            for (int i = 0; i < GroundPiles.Count; i++)
+            {
+                if (GroundPiles[i].salvageNodeId == nodeId)
+                    return GroundPiles[i];
+            }
+            return null;
+        }
+
+        public bool IsGridCoveredByForest(float gx, float gy)
+            => View != null && View.Map != null && View.Map.At(Mathf.FloorToInt(gx), Mathf.FloorToInt(gy)) > 0.25f;
+
+        public bool TryFindBestChopChunkToward(float targetGx, float targetGy, out int bestCx, out int bestCy, out Vector2 chunkCenterGrid)
+        {
+            bestCx = -1;
+            bestCy = -1;
+            chunkCenterGrid = new Vector2(targetGx, targetGy);
+            if (View == null) return false;
+
+            int maxChunk = ForestMap.N / ForestMap.ChunkSize - 1;
+            Vector2 target = new Vector2(targetGx, targetGy);
+
+            for (int pass = 0; pass < 2; pass++)
+            {
+                int minC = pass == 0 ? ForestSurvivalSim.MinPlayableChunk : 0;
+                int maxC = pass == 0 ? Mathf.Min(maxChunk, ForestSurvivalSim.MaxPlayableChunk) : maxChunk;
+                float bestDistSq = float.MaxValue;
+
+                for (int cx = minC; cx <= maxC; cx++)
+                {
+                    for (int cy = minC; cy <= maxC; cy++)
+                    {
+                        if (!View.CanChopChunk(cx, cy)) continue;
+                        Vector2 center = new Vector2(cx * ForestMap.ChunkSize + 1.5f, cy * ForestMap.ChunkSize + 1.5f);
+                        float d2 = (center - target).sqrMagnitude;
+                        if (d2 < bestDistSq)
+                        {
+                            bestDistSq = d2;
+                            bestCx = cx;
+                            bestCy = cy;
+                            chunkCenterGrid = center;
+                        }
+                    }
+                }
+                if (bestCx >= 0) return true;
+            }
+            return false;
+        }
+
+        public void SpawnFieldNode(FieldKind kind, float gx, float gy, int amount, bool allowInnerMeadow = false)
+        {
+            if (kind == FieldKind.RegrownTimber && IsInPermanentCampTerritory(gx, gy))
+                return;
+
             Sprite sp = null;
             float scale = 0.60f;
             if (kind == FieldKind.LogPile)
             {
                 sp = ForestArt.Get("logs", ForestPlaceholderArt.LogPile);
-                scale = 0.56f;
+                scale = 0.60f;
             }
             else if (kind == FieldKind.BerryBush)
             {
@@ -237,8 +563,8 @@ namespace Mori.ForestSlice
                 scale = 0.58f;
             }
 
-            // 像素级防穿模选点：自动检测与所有建筑、现有采集物、角色的真实贴图包围盒，若重叠则螺旋外推找净空！
-            if (!TryFindCleanPropSpot(sp, scale, gx, gy, out float cleanGx, out float cleanGy, out Rect visRect))
+            // 像素级防穿模选点：自动检测与所有建筑、现有采集物、角色的真实贴图包围盒，且禁止在未砍密林或永久营地内再生树木！
+            if (!TryFindCleanPropSpot(kind, sp, scale, gx, gy, allowInnerMeadow, out float cleanGx, out float cleanGy, out Rect visRect))
                 return;
 
             gx = cleanGx;
@@ -274,6 +600,7 @@ namespace Mori.ForestSlice
             }
             for (int i = 0; i < Walkers.Count; i++)
                 Walkers[i].cheerTimer = 1.0f;
+            SyncCivilianVillagers();
         }
 
         public void TriggerBuildingTapBounce(CampNode n)
@@ -304,6 +631,16 @@ namespace Mori.ForestSlice
                 if (nv.shadowGo != null) nv.shadowGo.SetActive(false);
                 return;
             }
+
+            GroundPile staleSalvage = FindSalvagePileForNode(n.id);
+            if (staleSalvage != null)
+            {
+                if (staleSalvage.go != null) DestroyGo(staleSalvage.go);
+                if (staleSalvage.shadowGo != null) DestroyGo(staleSalvage.shadowGo);
+                GroundPiles.Remove(staleSalvage);
+            }
+
+            View.OccupyCells(n.occupyX, n.occupyY, n.occupyW, n.occupyH);
 
             Sprite sp = ResolveNodeSprite(n, out Color tint, out bool isFlat);
             if (sp == null)
@@ -351,9 +688,9 @@ namespace Mori.ForestSlice
             }
             else if (n.state == NodeState.Active && n.kind == NodeKind.Barricade)
             {
-                AddExtraProp(nv, "barricade_b", 14.1f, 12.8f, false);
-                AddExtraProp(nv, "fence", 13.0f, 14.2f, true);
-                AddExtraProp(nv, "fence", 17.2f, 12.4f, false);
+                AddExtraProp(nv, "barricade_b", n.gx - 1.1f, n.gy + 0.4f, false);
+                AddExtraProp(nv, "fence", n.gx - 2.0f, n.gy + 1.0f, true);
+                AddExtraProp(nv, "fence", n.gx + 1.3f, n.gy - 0.5f, false);
             }
             else if (n.state == NodeState.Active && (n.kind == NodeKind.RelicGenerator || n.kind == NodeKind.HeatTower))
             {
@@ -372,10 +709,15 @@ namespace Mori.ForestSlice
             }
 
             SyncSurvivorWalkers();
+            if (Walkers.Count > 0 && Walkers[0].puppet != null)
+                Walkers[0].puppet.SetSkinTier(Sim.MaxUnlockedSkinTier, autoFallbackToBase: true);
+            RefreshWalkerDelegationStations();
+            SyncCivilianVillagers();
         }
 
         void AddExtraProp(NodeVisual nv, string key, float gx, float gy, bool flip)
         {
+            if (IsGridCoveredByForest(gx, gy)) return;
             Sprite sp = ForestArt.Get(key, null);
             if (sp == null) return;
             var go = new GameObject("extra_" + key);
@@ -461,6 +803,10 @@ namespace Mori.ForestSlice
                         return ForestArt.Get("farm_2", () => ForestPlaceholderArt.FarmPlot(2, 2, 2));
                     return ForestArt.Get("farm_0", () => ForestPlaceholderArt.FarmPlot(2, 2, 0));
 
+                case NodeKind.Ranch:
+                    if (isGhost) tint = new Color(0.85f, 0.95f, 1f, 0.52f);
+                    return ForestArt.Get("beast_ranch", () => ForestArt.Get("hunter_tower", ForestPlaceholderArt.Tent));
+
                 case NodeKind.Watchtower:
                     if (isGhost) tint = new Color(0.85f, 0.95f, 1f, 0.48f);
                     return ForestArt.Get("hunter_tower", ForestPlaceholderArt.Well);
@@ -495,114 +841,271 @@ namespace Mori.ForestSlice
             return null;
         }
 
-        // ---------------- 60FPS 多角色骨骼动画初始化与操控（阿澈 + 小棠） ----------------
+        // ---------------- 60FPS 多角色骨骼动画初始化与操控（Walkers[0]=领主阿澈，Walkers[1..]=6名幸存者骨干伙伴） ----------------
         ForestHeroPuppet _fishPuppet;
 
         void SyncSurvivorWalkers()
         {
+            // Walkers[0] 永远是玩家直控的营地领主【阿澈】(ache)，出生在温馨起步草坪中央 (15.8, 18.4)！
+            if (Walkers.Count == 0)
+            {
+                PuppetRigProfile acheProf = PuppetRegistry.GetProfile("ache");
+                Vector2 acheHome = new Vector2(15.8f, 18.4f);
+                Vector2 safeAcheW = ClampAndSlideWorldPos(ForestSliceView.Iso(acheHome.x, acheHome.y), ForestSliceView.Iso(acheHome.x, acheHome.y), 0.16f, 0.12f);
+                Vector2 sc0 = ForestSliceView.WorldToGrid(safeAcheW);
+
+                var achePuppet = new ForestHeroPuppet(_actorRoot, acheProf, "Leader_ache_0");
+                achePuppet.SetSkinTier(Sim.MaxUnlockedSkinTier, autoFallbackToBase: true);
+                achePuppet.SetFacing(true);
+                GameObject sh0 = View.CreateShadow(sc0.x, sc0.y, 0.62f, 0.54f);
+
+                var leader = new Walker
+                {
+                    index = 0,
+                    heroId = "ache",
+                    characterId = "ache",
+                    gx = sc0.x, gy = sc0.y,
+                    targetGx = sc0.x, targetGy = sc0.y,
+                    patrolA = acheHome,
+                    patrolB = acheHome,
+                    headingToB = true,
+                    pauseTimer = 2.0f,
+                    phase = 0f,
+                    tr = achePuppet.Root,
+                    puppet = achePuppet,
+                    shadowTr = sh0 != null ? sh0.transform : null,
+                };
+
+                BindWalkerPuppetEvents(leader, achePuppet);
+                achePuppet.SyncWorldPos(ForestSliceView.Iso(leader.gx, leader.gy), leader.shadowTr);
+                achePuppet.Tick(0.016f);
+                Walkers.Add(leader);
+            }
+
+            // 收集已招募的幸存者骨干伙伴（大锤、小棠、雷猛、林砚、铁叔、老陈头，绝不混入阿澈！）
             var unlocked = new List<HeroSpec>();
             for (int i = 0; i < Sim.Heroes.Count; i++)
-                if (Sim.Heroes[i].unlocked) unlocked.Add(Sim.Heroes[i]);
+            {
+                HeroSpec hs = Sim.Heroes[i];
+                if (hs != null && hs.unlocked && hs.id != "ache")
+                    unlocked.Add(hs);
+            }
 
-            // 主角阿澈驻守中央开阔广场（仅受玩家操控/派工才移动）；其余伙伴各自在工位旁走短距离无障碍固定直线巡逻！
-            Vector2[] patrolStarts =
+            // 伙伴初始巡逻路线全部严格落在起步开垦草甸 (12..20, 16..22) 内的平整空地上，绝不踏入未砍树林！
+            Vector2[] compStarts =
             {
-                new Vector2(16.4f, 16.2f), // 0: 阿澈（中央广场自由受控）
-                new Vector2(18.3f, 15.0f), // 1: 小棠（锯木/锻造工坊前坪 A）
-                new Vector2(14.1f, 15.6f), // 2: 老陈头（野味炊事房灶台旁 A）
-                new Vector2(13.9f, 17.2f), // 3: 林砚（西侧哨位走廊 A）
-                new Vector2(17.5f, 17.8f), // 4: 大锤（东侧仓库车场 A）
+                new Vector2(14.3f, 19.3f), // 1: 大锤（供暖塔与议事厅前坪 A）
+                new Vector2(17.8f, 19.2f), // 2: 小棠（物资仓库前坪 A）
+                new Vector2(14.2f, 17.5f), // 3: 雷猛（西侧草坪哨位 A）
+                new Vector2(17.0f, 20.0f), // 4: 林砚（议事厅东侧走廊 A）
+                new Vector2(18.2f, 17.6f), // 5: 铁叔（东侧物资走廊 A）
+                new Vector2(14.7f, 20.1f), // 6: 老陈头（议事厅西侧走廊 A）
             };
-            Vector2[] patrolEnds =
+            Vector2[] compEnds =
             {
-                new Vector2(16.4f, 16.2f), // 0: 阿澈不自动乱逛
-                new Vector2(19.0f, 14.0f), // 1: 小棠（锯木/锻造工坊前坪 B）
-                new Vector2(14.8f, 14.8f), // 2: 老陈头（野味炊事房灶台旁 B）
-                new Vector2(14.9f, 17.5f), // 3: 林砚（西侧哨位走廊 B）
-                new Vector2(18.4f, 17.1f), // 4: 大锤（东侧仓库车场 B）
+                new Vector2(15.0f, 18.8f), // 1: 大锤 B
+                new Vector2(18.4f, 18.5f), // 2: 小棠 B
+                new Vector2(14.9f, 16.9f), // 3: 雷猛 B
+                new Vector2(17.7f, 19.5f), // 4: 林砚 B
+                new Vector2(18.8f, 17.1f), // 5: 铁叔 B
+                new Vector2(15.3f, 19.6f), // 6: 老陈头 B
             };
 
-            while (Walkers.Count < unlocked.Count)
+            for (int u = 0; u < unlocked.Count; u++)
             {
+                HeroSpec spec = unlocked[u];
+                bool alreadySpawned = false;
+                for (int k = 1; k < Walkers.Count; k++)
+                {
+                    if (Walkers[k].heroId == spec.id)
+                    {
+                        alreadySpawned = true;
+                        break;
+                    }
+                }
+                if (alreadySpawned) continue;
+
                 int idx = Walkers.Count;
-                HeroSpec spec = unlocked[idx];
-                string cid = string.IsNullOrEmpty(spec.characterId) ? "ache" : spec.characterId;
-                PuppetRigProfile prof = PuppetRegistry.GetProfile(cid);
-                Vector2 pA = idx < patrolStarts.Length ? patrolStarts[idx] : new Vector2(16.0f + idx * 0.4f, 15.5f);
-                Vector2 pB = idx < patrolEnds.Length ? patrolEnds[idx] : pA + new Vector2(0.7f, -0.4f);
-                Vector2 safeW = ClampAndSlideWorldPos(ForestSliceView.Iso(16.4f, 16.4f), ForestSliceView.Iso(pA.x, pA.y), 0.20f, 0.14f);
+                int slotIdx = Mathf.Max(0, idx - 1);
+                string cid = string.IsNullOrEmpty(spec.characterId) ? spec.id : spec.characterId;
+                PuppetRigProfile prof = ResolveCompanionRigProfile(spec.id, cid);
+                Vector2 pA = slotIdx < compStarts.Length ? compStarts[slotIdx] : new Vector2(15.0f + (slotIdx % 3) * 1.1f, 18.2f);
+                Vector2 pB = slotIdx < compEnds.Length ? compEnds[slotIdx] : pA + new Vector2(0.6f, -0.4f);
+                Vector2 safeW = ClampAndSlideWorldPos(ForestSliceView.Iso(15.8f, 18.4f), ForestSliceView.Iso(pA.x, pA.y), 0.20f, 0.14f);
                 Vector2 sc = ForestSliceView.WorldToGrid(safeW);
 
-                var puppet = new ForestHeroPuppet(_actorRoot, prof, "Hero_" + cid + "_" + idx);
+                var puppet = new ForestHeroPuppet(_actorRoot, prof, "Companion_" + spec.id + "_" + idx);
                 puppet.SetSkinTier(spec.skinTier, autoFallbackToBase: true);
-                puppet.SetFacing(idx % 2 == 0);
-                GameObject sh = View.CreateShadow(sc.x, sc.y, idx == 0 ? 0.62f : 0.56f, 0.54f);
+                puppet.SetFacing(idx % 2 == 1);
+                GameObject sh = View.CreateShadow(sc.x, sc.y, 0.56f, 0.54f);
 
                 var w = new Walker
                 {
                     index = idx,
+                    heroId = spec.id,
                     characterId = cid,
                     gx = sc.x, gy = sc.y,
                     targetGx = sc.x, targetGy = sc.y,
                     patrolA = pA,
                     patrolB = pB,
                     headingToB = true,
-                    pauseTimer = 2.0f + idx * 1.3f,
+                    pauseTimer = 2.0f + idx * 1.2f,
                     phase = idx * 1.4f,
                     tr = puppet.Root,
                     puppet = puppet,
                     shadowTr = sh != null ? sh.transform : null,
                 };
 
-                // 挥斧/挥扳手下砸命中帧回调：爆出木屑/火星并令目标物件剧烈抖动！
-                puppet.OnChopImpact += () =>
-                {
-                    if (w.assignedTask != null)
-                    {
-                        Vector3 hitPos = ForestSliceView.Iso(w.assignedTask.gx, w.assignedTask.gy) + new Vector3(0f, 0.35f, 0f);
-                        View.BurstChips(hitPos, 9);
-                        if (w.assignedTask.isPile && w.assignedTask.pile != null && w.assignedTask.pile.go != null)
-                        {
-                            w.assignedTask.pile.go.transform.localPosition =
-                                ForestSliceView.Iso(w.assignedTask.gx, w.assignedTask.gy) + (Vector3)(Random.insideUnitCircle * 0.08f);
-                        }
-                    }
-                };
-                puppet.OnFootstep += () =>
-                {
-                    View.BurstChips(ForestSliceView.Iso(w.gx, w.gy) + new Vector3(0f, 0.05f, 0f), 1);
-                };
-
+                BindWalkerPuppetEvents(w, puppet);
                 puppet.SyncWorldPos(ForestSliceView.Iso(w.gx, w.gy), w.shadowTr);
                 puppet.Tick(0.016f);
                 Walkers.Add(w);
             }
         }
 
-        /// <summary>支持玩家用 WASD / 方向键直接操控主角阿澈在营地自由奔跑（带林缘边界滑动与建筑/物品实体碰撞）！</summary>
+        void BindWalkerPuppetEvents(Walker w, ForestHeroPuppet puppet)
+        {
+            puppet.OnChopImpact += () =>
+            {
+                if (w.assignedTask != null)
+                {
+                    Vector3 hitPos = ForestSliceView.Iso(w.assignedTask.gx, w.assignedTask.gy) + new Vector3(0f, 0.35f, 0f);
+                    View.BurstChips(hitPos, 9);
+                    if (w.assignedTask.isPile && w.assignedTask.pile != null && w.assignedTask.pile.go != null)
+                    {
+                        w.assignedTask.pile.go.transform.localPosition =
+                            ForestSliceView.Iso(w.assignedTask.gx, w.assignedTask.gy) + (Vector3)(Random.insideUnitCircle * 0.08f);
+                    }
+                }
+            };
+            puppet.OnFootstep += () =>
+            {
+                View.BurstChips(ForestSliceView.Iso(w.gx, w.gy) + new Vector3(0f, 0.05f, 0f), 1);
+            };
+        }
+
+        static readonly Vector2[] VillagerWaypoints =
+        {
+            new Vector2(14.3f, 18.8f), // 供暖塔暖火旁
+            new Vector2(17.8f, 18.8f), // 物资仓库前坪
+            new Vector2(15.2f, 19.9f), // 议事厅前坪西
+            new Vector2(16.9f, 19.8f), // 议事厅前坪东
+            new Vector2(14.8f, 17.6f), // 起步草甸西南
+            new Vector2(17.4f, 17.8f), // 起步草甸东南
+            new Vector2(16.0f, 18.9f), // 起步草甸中心北
+            new Vector2(16.3f, 17.6f), // 起步草甸中心南
+        };
+
+        static readonly string[] VillagerAmbientLines =
+        {
+            "供暖塔烧得真旺，山里夜风也不怕了！",
+            "裁缝坊缝的新麻布衣真结实耐穿！",
+            "仓库堆得满满当当，心里太踏实啦！",
+            "炊事房炖的鲜蔬汤隔老远都闻着香！",
+            "多亏阿澈领主收留，总算有个安稳家了！"
+        };
+
+        public void SyncCivilianVillagers()
+        {
+            int target = Sim.VisibleVillagerCount;
+            while (CivilianVillagers.Count < target)
+            {
+                int idx = CivilianVillagers.Count;
+                // villager_0 专属于重装先锋骨干【雷猛】，普通流民使用 villager_1..3 保持 100% 形象区分！
+                int kind = 1 + (idx % 3);
+                Vector2 wp = VillagerWaypoints[idx % VillagerWaypoints.Length];
+                Vector2 nextWp = VillagerWaypoints[(idx + 3) % VillagerWaypoints.Length];
+
+                var go = new GameObject($"CivilianVillager_{idx}_k{kind}");
+                go.transform.SetParent(_actorRoot, false);
+                go.transform.localScale = new Vector3(0.68f, 0.68f, 1f);
+                var sr = go.AddComponent<SpriteRenderer>();
+                sr.sprite = ForestArt.Get("villager_" + kind, () => ForestPlaceholderArt.Survivor(kind + 1));
+                GameObject sh = View.CreateShadow(wp.x, wp.y, 0.48f, 0.46f);
+
+                var v = new VillagerActor
+                {
+                    index = idx,
+                    kindIdx = kind,
+                    gx = wp.x + (idx % 2 == 0 ? 0.16f : -0.16f),
+                    gy = wp.y + (idx % 3 == 0 ? 0.14f : -0.14f),
+                    targetGx = nextWp.x,
+                    targetGy = nextWp.y,
+                    pauseTimer = 1.2f + (idx % 4) * 1.1f,
+                    phase = idx * 1.7f,
+                    tr = go.transform,
+                    sr = sr,
+                    shadowTr = sh != null ? sh.transform : null,
+                };
+                SyncActorTransform(v.tr, v.sr, v.shadowTr, v.gx, v.gy, 0f, 0f);
+                CivilianVillagers.Add(v);
+            }
+        }
+
+        public void RefreshWalkerDelegationStations()
+        {
+            for (int i = 1; i < Walkers.Count; i++)
+            {
+                Walker w = Walkers[i];
+                DelegationPostKind? post = Sim.GetHeroAssignedPost(!string.IsNullOrEmpty(w.heroId) ? w.heroId : w.characterId);
+                if (!post.HasValue) continue;
+
+                string anchorId = "warehouse";
+                switch (post.Value)
+                {
+                    case DelegationPostKind.WorkshopSpeed: anchorId = "sawmill"; break;
+                    case DelegationPostKind.BuildSpeed: anchorId = "warehouse"; break;
+                    case DelegationPostKind.FarmYield: anchorId = "farm_a"; break;
+                    case DelegationPostKind.DefensePower: anchorId = "barricade"; break;
+                    case DelegationPostKind.TruckArmor: anchorId = "relic_truck"; break;
+                    case DelegationPostKind.CaravanBonus: anchorId = "radio_post"; break;
+                }
+
+                CampNode anchor = Sim.Find(anchorId);
+                if (anchor != null && anchor.state == NodeState.Active)
+                {
+                    Vector2 candA = new Vector2(anchor.gx - 0.8f, anchor.gy - 0.8f);
+                    Vector2 candB = new Vector2(anchor.gx + 0.6f, anchor.gy - 1.1f);
+                    if (IsWalkableWorldPoint(ForestSliceView.Iso(candA.x, candA.y), 0.16f, 0.12f) &&
+                        IsWalkableWorldPoint(ForestSliceView.Iso(candB.x, candB.y), 0.16f, 0.12f))
+                    {
+                        w.patrolA = candA;
+                        w.patrolB = candB;
+                        continue;
+                    }
+                }
+
+                // 若目标工位建筑尚未砍开建造，稳妥留在起步营地中心草坪巡逻！
+                w.patrolA = new Vector2(14.4f + (i % 3) * 1.5f, 18.9f - (i % 2) * 0.9f);
+                w.patrolB = w.patrolA + new Vector2(0.65f, -0.45f);
+            }
+        }
+
+        /// <summary>支持玩家用 WASD / 方向键直接操控主角阿澈在营地自由奔跑（带林缘边界切向滑动与建筑实体滑移）！</summary>
         public void DriveHeroByInput(Vector2 screenDir, float dt)
         {
-            if (_fishingActive || Walkers.Count == 0 || screenDir.sqrMagnitude < 0.01f) return;
+            if (_fishingActive || InWaveDefense || Walkers.Count == 0 || screenDir.sqrMagnitude < 0.01f) return;
             Walker w = Walkers[0];
             w.hasManualMove = false;
             w.assignedTask = null;
+            w.avoidSide = 0;
 
             Vector2 curWorld = ForestSliceView.Iso(w.gx, w.gy);
-            Vector2 desiredWorld = curWorld + screenDir.normalized * (3.1f * dt);
-            Vector2 clampedWorld = ClampAndSlideWorldPos(curWorld, desiredWorld, 0.20f, 0.14f);
+            Vector2 desiredWorld = curWorld + screenDir.normalized * (3.05f * dt);
+            Vector2 clampedWorld = ClampAndSlideWorldPos(curWorld, desiredWorld, 0.08f, 0.05f);
             Vector2 nextGrid = ForestSliceView.WorldToGrid(clampedWorld);
 
             w.gx = nextGrid.x;
             w.gy = nextGrid.y;
             w.targetGx = w.gx;
             w.targetGy = w.gy;
-            ResolveActorSeparation();
+            w.manualDriveHold = 0.06f;
+            w.stuckTimer = 0f;
 
             if (Mathf.Abs(screenDir.x) > 0.02f)
                 w.puppet.SetFacing(screenDir.x >= 0f);
-            bool actuallyMoved = (clampedWorld - curWorld).sqrMagnitude > 0.00001f;
+            bool actuallyMoved = (clampedWorld - curWorld).sqrMagnitude > 0.000004f;
             w.puppet.SetMode(!actuallyMoved ? HeroAnimMode.Idle : (w.carryHomeTimer > 0f ? HeroAnimMode.CarryRun : HeroAnimMode.Run));
-            w.puppet.SyncWorldPos(ForestSliceView.Iso(w.gx, w.gy), w.shadowTr);
         }
 
         void PickNextWalkerTarget(Walker w)
@@ -682,9 +1185,31 @@ namespace Mori.ForestSlice
             return false;
         }
 
-        bool TryFindCleanPropSpot(Sprite sp, float scale, float prefGx, float prefGy, out float outGx, out float outGy, out Rect outVisRect)
+        bool IsNearAnyUncoveredOrActiveNode(float gx, float gy, float minDist)
         {
-            const float visualPad = 0.24f;
+            float r2 = minDist * minDist;
+            for (int i = 0; i < Sim.Nodes.Count; i++)
+            {
+                CampNode n = Sim.Nodes[i];
+                if (!n.siteUncovered && n.state == NodeState.HiddenInForest) continue;
+                float dx = gx - n.gx;
+                float dy = gy - n.gy;
+                if (dx * dx + dy * dy < r2) return true;
+            }
+            return false;
+        }
+
+        bool IsInPermanentCampTerritory(float gx, float gy)
+        {
+            if (gx >= 4.5f && gx <= 27.5f && gy >= 4.5f && gy <= 27.5f)
+                return true;
+            return IsNearAnyUncoveredOrActiveNode(gx, gy, 4.8f);
+        }
+
+        bool TryFindCleanPropSpot(FieldKind kind, Sprite sp, float scale, float prefGx, float prefGy, bool allowInnerMeadow, out float outGx, out float outGy, out Rect outVisRect)
+        {
+            const float visualPad = 0.22f;
+            float margin = allowInnerMeadow ? 0.22f : 0.42f;
             float[] radii = { 0f, 0.55f, 1.05f, 1.55f, 2.10f, 2.70f, 3.30f };
             for (int rIdx = 0; rIdx < radii.Length; rIdx++)
             {
@@ -695,11 +1220,22 @@ namespace Mori.ForestSlice
                     float ang = s * (Mathf.PI * 2f / steps) + rIdx * 0.37f;
                     float gx = prefGx + Mathf.Cos(ang) * r;
                     float gy = prefGy + Mathf.Sin(ang) * r;
-                    // 严禁采集物刷进营地中央开阔广场与伙伴固定巡逻走廊！
-                    if (gx > 14.2f && gx < 18.8f && gy > 13.6f && gy < 18.8f) continue;
+
+                    // 严禁在未砍开的密林中生成任何采集物！
+                    if (IsGridCoveredByForest(gx, gy)) continue;
+
+                    // 永久扩展营地领地内严禁长出再生松木！
+                    if (kind == FieldKind.RegrownTimber && IsInPermanentCampTerritory(gx, gy)) continue;
+
+                    // 随机再生的野果/废铁/原木禁止刷进起步核心草坪或紧贴已解锁建筑！
+                    if (!allowInnerMeadow)
+                    {
+                        if (gx > 12.2f && gx < 20.8f && gy > 16.0f && gy < 22.8f) continue;
+                        if (IsNearAnyUncoveredOrActiveNode(gx, gy, 4.8f)) continue;
+                    }
 
                     Vector2 wPos = ForestSliceView.Iso(gx, gy);
-                    if (!IsInsideClearedBoundary(wPos, gridMargin: 0.52f)) continue;
+                    if (!IsCleanForPropSpawn(wPos, gridMargin: margin, allowEdgeGrass: allowInnerMeadow)) continue;
 
                     Rect vr = ComputeSpriteWorldRect(sp, wPos, scale, scale, pad: visualPad);
                     if (OverlapsAnyVisualRect(vr)) continue;
@@ -716,16 +1252,39 @@ namespace Mori.ForestSlice
             return false;
         }
 
+        bool IsCleanForPropSpawn(Vector2 worldPos, float gridMargin = 0.45f, bool allowEdgeGrass = false)
+        {
+            Vector2 g = ForestSliceView.WorldToGrid(worldPos);
+            int cx = Mathf.FloorToInt(g.x), cy = Mathf.FloorToInt(g.y);
+            if (!View.Map.IsCleared(cx, cy) || ForestMap.RiverDistance(g.x, g.y) < 1.65f) return false;
+
+            float backM = gridMargin;
+            float frontM = allowEdgeGrass ? Mathf.Max(gridMargin, 0.28f) : Mathf.Max(gridMargin, 0.85f);
+            if (!View.Map.IsCleared(Mathf.FloorToInt(g.x - frontM), Mathf.FloorToInt(g.y))) return false;
+            if (!View.Map.IsCleared(Mathf.FloorToInt(g.x), Mathf.FloorToInt(g.y - frontM))) return false;
+            if (!View.Map.IsCleared(Mathf.FloorToInt(g.x + backM), Mathf.FloorToInt(g.y + backM))) return false;
+            return true;
+        }
+
+        static bool IsPhysicalRelicKind(NodeKind k)
+        {
+            return k == NodeKind.RelicWell ||
+                   k == NodeKind.RelicLoot ||
+                   k == NodeKind.RelicGenerator ||
+                   k == NodeKind.RelicTruck ||
+                   k == NodeKind.RelicRoadGate;
+        }
+
         void GatherObstacles(List<ObstacleEllipse> list)
         {
-            // 2D 闵可夫斯基和碰撞椭圆：因为人物身高约 0.68u 向上延伸，将椭圆中心略向下偏 (-0.06~-0.10u) 并扩大纵向半径，
-            // 确保角色不仅脚底踩不到物品上，连从物品正下方走近时头顶/胸口也不会盖住篝火、原木堆或帐篷贴图！
+            // 仅对真实立体的实体建筑底座与采集物核心建立紧凑脚底椭圆（平铺农田、未建半透明蓝图虚影、地面装饰矮树桩一律不阻挡行走！）
             list.Clear();
             for (int i = 0; i < Sim.Nodes.Count; i++)
             {
                 CampNode n = Sim.Nodes[i];
                 if (n.state == NodeState.HiddenInForest || n.state == NodeState.Depleted) continue;
-                if (n.kind == NodeKind.Farm && n.state == NodeState.Discovered) continue;
+                if (n.kind == NodeKind.Farm) continue;
+                if (n.state == NodeState.Discovered && !IsPhysicalRelicKind(n.kind)) continue;
 
                 Vector2 iso = ForestSliceView.Iso(n.gx, n.gy);
                 ObstacleEllipse ob;
@@ -733,37 +1292,35 @@ namespace Mori.ForestSlice
                 {
                     case NodeKind.Shelter:
                     case NodeKind.Sawmill:
-                        ob = new ObstacleEllipse { center = iso + new Vector2(0f, 0.08f), rx = 0.84f, ry = 0.54f };
+                    case NodeKind.Warehouse:
+                        ob = new ObstacleEllipse { center = iso + new Vector2(0f, 0.10f), rx = 0.50f, ry = 0.25f };
                         break;
                     case NodeKind.Dwelling:
-                    case NodeKind.Warehouse:
                     case NodeKind.Smithy:
                     case NodeKind.Tailor:
                     case NodeKind.HerbHut:
+                    case NodeKind.Ranch:
                     case NodeKind.RadioPost:
-                        ob = new ObstacleEllipse { center = iso + new Vector2(0f, 0.06f), rx = 0.72f, ry = 0.48f };
+                        ob = new ObstacleEllipse { center = iso + new Vector2(0f, 0.08f), rx = 0.44f, ry = 0.23f };
                         break;
                     case NodeKind.HeatTower:
-                        ob = new ObstacleEllipse { center = iso + new Vector2(0f, 0.02f), rx = 0.58f, ry = 0.46f };
+                        ob = new ObstacleEllipse { center = iso + new Vector2(0f, 0.06f), rx = 0.36f, ry = 0.20f };
                         break;
                     case NodeKind.Kitchen:
                         ob = n.level >= 2
-                            ? new ObstacleEllipse { center = iso + new Vector2(0f, 0.06f), rx = 0.76f, ry = 0.50f }
-                            : new ObstacleEllipse { center = iso + new Vector2(0f, -0.06f), rx = 0.42f, ry = 0.48f };
-                        break;
-                    case NodeKind.Farm:
-                        ob = new ObstacleEllipse { center = iso + new Vector2(0f, -0.08f), rx = 0.72f, ry = 0.44f };
+                            ? new ObstacleEllipse { center = iso + new Vector2(0f, 0.08f), rx = 0.46f, ry = 0.24f }
+                            : new ObstacleEllipse { center = iso + new Vector2(0f, 0.02f), rx = 0.26f, ry = 0.16f };
                         break;
                     case NodeKind.RelicGenerator:
                     case NodeKind.RelicTruck:
                     case NodeKind.RelicRoadGate:
-                        ob = new ObstacleEllipse { center = iso + new Vector2(0f, 0.06f), rx = 0.80f, ry = 0.52f };
+                        ob = new ObstacleEllipse { center = iso + new Vector2(0f, 0.08f), rx = 0.52f, ry = 0.26f };
                         break;
                     case NodeKind.RiverDock:
-                        ob = new ObstacleEllipse { center = iso + new Vector2(0f, -0.02f), rx = 0.62f, ry = 0.42f };
+                        ob = new ObstacleEllipse { center = iso + new Vector2(0f, 0.02f), rx = 0.40f, ry = 0.20f };
                         break;
                     default:
-                        ob = new ObstacleEllipse { center = iso + new Vector2(0f, -0.04f), rx = 0.50f, ry = 0.44f };
+                        ob = new ObstacleEllipse { center = iso + new Vector2(0f, 0.04f), rx = 0.34f, ry = 0.18f };
                         break;
                 }
                 list.Add(ob);
@@ -773,37 +1330,28 @@ namespace Mori.ForestSlice
             {
                 GroundPile p = GroundPiles[i];
                 Vector2 iso = ForestSliceView.Iso(p.gx, p.gy);
-                list.Add(new ObstacleEllipse { center = iso + new Vector2(0f, -0.08f), rx = 0.38f, ry = 0.44f });
-            }
-
-            for (int i = 0; i < View.StumpWorldCenters.Count; i++)
-            {
-                Vector2 st = View.StumpWorldCenters[i];
-                list.Add(new ObstacleEllipse { center = st + new Vector2(0f, -0.10f), rx = 0.24f, ry = 0.32f });
+                list.Add(new ObstacleEllipse { center = iso + new Vector2(0f, 0.02f), rx = 0.18f, ry = 0.11f });
             }
         }
 
-        public bool IsInsideClearedBoundary(Vector2 worldPos, float gridMargin = 0.38f)
+        public bool IsInsideClearedBoundary(Vector2 worldPos, float gridMargin = 0.14f)
         {
             Vector2 g = ForestSliceView.WorldToGrid(worldPos);
             int cx = Mathf.FloorToInt(g.x), cy = Mathf.FloorToInt(g.y);
-            if (!View.Map.IsCleared(cx, cy) || ForestMap.IsNearRiver(cx, cy)) return false;
+            if (!View.Map.IsCleared(cx, cy) || ForestMap.RiverDistance(g.x, g.y) < 1.18f) return false;
 
-            // 后排林缘只需 0.42 格净空，前排林缘（屏幕下方树冠高 1.5u）预留 1.35 格防遮挡安全线，角色和物品绝不会钻进前排树叶底下！
-            float backM = gridMargin;
-            float frontM = Mathf.Max(gridMargin, 1.35f);
-            if (!View.Map.IsCleared(Mathf.FloorToInt(g.x - frontM), Mathf.FloorToInt(g.y))) return false;
-            if (!View.Map.IsCleared(Mathf.FloorToInt(g.x), Mathf.FloorToInt(g.y - frontM))) return false;
-            if (!View.Map.IsCleared(Mathf.FloorToInt(g.x - frontM * 0.8f), Mathf.FloorToInt(g.y - frontM * 0.8f))) return false;
-            if (!View.Map.IsCleared(Mathf.FloorToInt(g.x + backM), Mathf.FloorToInt(g.y + backM))) return false;
-            if (!View.Map.IsCleared(Mathf.FloorToInt(g.x + backM), Mathf.FloorToInt(g.y - backM))) return false;
-            if (!View.Map.IsCleared(Mathf.FloorToInt(g.x - backM), Mathf.FloorToInt(g.y + backM))) return false;
+            // 彻底移除旧版 1.35 格远距离空气墙！仅保留 0.12~0.16 格贴边脚底净空，让主角可以直接走到每一排林缘树干旁！
+            float m = Mathf.Clamp(gridMargin, 0.04f, 0.22f);
+            if (!View.Map.IsCleared(Mathf.FloorToInt(g.x - m), cy)) return false;
+            if (!View.Map.IsCleared(Mathf.FloorToInt(g.x + m), cy)) return false;
+            if (!View.Map.IsCleared(cx, Mathf.FloorToInt(g.y - m))) return false;
+            if (!View.Map.IsCleared(cx, Mathf.FloorToInt(g.y + m))) return false;
             return true;
         }
 
-        public bool IsWalkableWorldPoint(Vector2 worldPos, float padX = 0.20f, float padY = 0.14f)
+        public bool IsWalkableWorldPoint(Vector2 worldPos, float padX = 0.08f, float padY = 0.05f)
         {
-            if (!IsInsideClearedBoundary(worldPos, 0.38f)) return false;
+            if (!IsInsideClearedBoundary(worldPos, 0.14f)) return false;
             GatherObstacles(_tempObstacles);
             for (int i = 0; i < _tempObstacles.Count; i++)
             {
@@ -818,26 +1366,49 @@ namespace Mori.ForestSlice
 
         Vector2 ClampAndSlideWorldPos(Vector2 prevWorld, Vector2 desiredWorld, float padX, float padY)
         {
+            Vector2 moveVec = desiredWorld - prevWorld;
+            float stepDist = moveVec.magnitude;
             Vector2 p = desiredWorld;
 
-            // 1. 林缘与河岸边界顺滑滑动（斜撞树林时自动沿林缘切线滑行）
-            if (!IsInsideClearedBoundary(p, 0.38f))
+            // 1. 林缘与河岸切向顺滑滑行：斜撞任何方向树林边缘时，沿等距网格轴或切向保留最大前向速度丝滑滑过！
+            if (!IsInsideClearedBoundary(p, 0.14f))
             {
                 Vector2 prevG = ForestSliceView.WorldToGrid(prevWorld);
                 Vector2 desG = ForestSliceView.WorldToGrid(desiredWorld);
-                Vector2 tryGx = ForestSliceView.Iso(desG.x, prevG.y);
-                Vector2 tryGy = ForestSliceView.Iso(prevG.x, desG.y);
-                Vector2 tryWx = new Vector2(desiredWorld.x, prevWorld.y);
-                Vector2 tryWy = new Vector2(prevWorld.x, desiredWorld.y);
+                Vector2 moveDir = stepDist > 0.0001f ? moveVec / stepDist : Vector2.right;
 
-                if (IsInsideClearedBoundary(tryGx, 0.38f)) p = tryGx;
-                else if (IsInsideClearedBoundary(tryGy, 0.38f)) p = tryGy;
-                else if (IsInsideClearedBoundary(tryWx, 0.38f)) p = tryWx;
-                else if (IsInsideClearedBoundary(tryWy, 0.38f)) p = tryWy;
-                else if (IsInsideClearedBoundary(prevWorld, 0.25f)) p = prevWorld;
+                Vector2 bestCand = prevWorld;
+                float bestScore = -0.0001f;
+
+                Vector2[] slideCands =
+                {
+                    ForestSliceView.Iso(desG.x, prevG.y),
+                    ForestSliceView.Iso(prevG.x, desG.y),
+                    new Vector2(desiredWorld.x, prevWorld.y),
+                    new Vector2(prevWorld.x, desiredWorld.y),
+                    prevWorld + RotateVec(moveDir, 28f) * stepDist,
+                    prevWorld + RotateVec(moveDir, -28f) * stepDist,
+                    prevWorld + RotateVec(moveDir, 56f) * stepDist,
+                    prevWorld + RotateVec(moveDir, -56f) * stepDist,
+                    prevWorld + RotateVec(moveDir, 82f) * (stepDist * 0.85f),
+                    prevWorld + RotateVec(moveDir, -82f) * (stepDist * 0.85f),
+                };
+
+                for (int c = 0; c < slideCands.Length; c++)
+                {
+                    Vector2 cand = slideCands[c];
+                    if (!IsInsideClearedBoundary(cand, 0.14f)) continue;
+                    float score = Vector2.Dot(cand - prevWorld, moveDir);
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        bestCand = cand;
+                    }
+                }
+                p = bestCand;
             }
 
-            // 2. 建筑、采集物、树桩椭圆实体推出（3 次迭代保证多障碍交界处也绝不穿入贴图！）
+            // 2. 建筑与采集物底座椭圆：精确法线推出 + 沿椭圆切线补偿滑移，撞上任何建筑边缘都自动顺势滑开，绝不卡死！
             GatherObstacles(_tempObstacles);
             for (int iter = 0; iter < 3; iter++)
             {
@@ -853,24 +1424,67 @@ namespace Mori.ForestSlice
                     float d2 = nx * nx + ny * ny;
                     if (d2 < 1f)
                     {
+                        float ux, uy;
                         if (d2 < 0.0001f)
-                            p = ob.center + new Vector2(rx, 0f);
+                        {
+                            ux = prevWorld.x >= ob.center.x ? 1f : -1f;
+                            uy = 0f;
+                        }
                         else
                         {
-                            // 横向优先顺滑推出：从下方或上方撞向篝火/物品时自然向左右两侧绕开，绝不停在物品正前方遮挡贴图！
-                            Vector2 biased = new Vector2(nx * 1.45f, ny * 0.85f);
-                            if (biased.sqrMagnitude < 0.0001f) biased = new Vector2(1f, 0f);
-                            biased.Normalize();
-                            p = ob.center + new Vector2(biased.x * rx, biased.y * ry);
+                            float inv = 1f / Mathf.Sqrt(d2);
+                            ux = nx * inv;
+                            uy = ny * inv;
+                        }
+
+                        // 椭圆外法线与表面最近点
+                        Vector2 boundPt = ob.center + new Vector2(ux * rx, uy * ry);
+                        if (iter == 0 && stepDist > 0.0001f)
+                        {
+                            Vector2 outNormal = new Vector2(ux / rx, uy / ry).normalized;
+                            Vector2 tangent = new Vector2(-outNormal.y, outNormal.x);
+                            float dot = Vector2.Dot(tangent, moveVec);
+                            if (Mathf.Abs(dot) < stepDist * 0.12f)
+                            {
+                                // 正面顶撞建筑中心时按角色当前左右偏置自动择侧切向滑开
+                                float side = (prevWorld.x - ob.center.x) >= 0f ? 1f : -1f;
+                                if (tangent.x * side < 0f) tangent = -tangent;
+                            }
+                            else if (dot < 0f)
+                            {
+                                tangent = -tangent;
+                            }
+
+                            Vector2 slid = boundPt + tangent * (stepDist * 0.85f);
+                            // 再次轻推回椭圆外侧 1.01 倍包络线上，保持圆润弧线滑行
+                            float snx = (slid.x - ob.center.x) / rx;
+                            float sny = (slid.y - ob.center.y) / ry;
+                            float sd = Mathf.Sqrt(Mathf.Max(0.0001f, snx * snx + sny * sny));
+                            if (sd < 1.005f)
+                                slid = ob.center + new Vector2((snx / sd) * rx * 1.008f, (sny / sd) * ry * 1.008f);
+                            p = slid;
+                        }
+                        else
+                        {
+                            p = ob.center + new Vector2(ux * rx * 1.008f, uy * ry * 1.008f);
                         }
                     }
                 }
             }
 
-            if (!IsInsideClearedBoundary(p, 0.28f) && IsInsideClearedBoundary(prevWorld, 0.28f))
+            if (!IsInsideClearedBoundary(p, 0.10f) && IsInsideClearedBoundary(prevWorld, 0.10f))
                 p = prevWorld;
             return p;
         }
+
+        static Vector2 RotateVec(Vector2 v, float deg)
+        {
+            float rad = deg * Mathf.Deg2Rad;
+            float cs = Mathf.Cos(rad), sn = Mathf.Sin(rad);
+            return new Vector2(v.x * cs - v.y * sn, v.x * sn + v.y * cs);
+        }
+
+        static readonly float[] FanAnglesDeg = { 18f, 36f, 54f, 72f, 92f, 114f, 136f };
 
         Vector2 StepWalkerAroundObstacles(Walker self, Vector2 curW, Vector2 goalW, float worldSpeed, float dt)
         {
@@ -878,78 +1492,119 @@ namespace Mori.ForestSlice
             float dist = toGoal.magnitude;
             if (dist < 0.001f) return curW;
 
-            Vector2 dir = toGoal / dist;
-            Vector2 steer = Vector2.zero;
-
-            // 前瞻切向绕障：遇到建筑、原木堆或其他同伴挡在正前方时，自动向空旷侧平滑绕行！
-            GatherObstacles(_tempObstacles);
-            float lookAhead = Mathf.Min(dist, 0.62f);
-            Vector2 probe = curW + dir * (lookAhead * 0.65f);
-
-            for (int i = 0; i < _tempObstacles.Count; i++)
-            {
-                ObstacleEllipse ob = _tempObstacles[i];
-                float rx = ob.rx + 0.30f, ry = ob.ry + 0.22f;
-                float nx = (probe.x - ob.center.x) / rx;
-                float ny = (probe.y - ob.center.y) / ry;
-                float d2 = nx * nx + ny * ny;
-                if (d2 < 1.15f)
-                {
-                    Vector2 perpA = new Vector2(-dir.y, dir.x);
-                    Vector2 perpB = new Vector2(dir.y, -dir.x);
-                    Vector2 fromOb = (curW - ob.center).normalized;
-                    Vector2 chosen = Vector2.Dot(perpA, fromOb) >= 0f ? perpA : perpB;
-                    steer += chosen * (1.25f - Mathf.Min(1.15f, Mathf.Sqrt(d2))) * 1.4f;
-                }
-            }
-
-            for (int i = 0; i < Walkers.Count; i++)
-            {
-                Walker other = Walkers[i];
-                if (other == self) continue;
-                Vector2 oPos = ForestSliceView.Iso(other.gx, other.gy);
-                Vector2 diff = probe - oPos;
-                float nx = diff.x / 0.62f;
-                float ny = diff.y / 0.72f;
-                float d2 = nx * nx + ny * ny;
-                if (d2 < 1.1f)
-                {
-                    float side = (curW.x >= oPos.x) ? 1f : -1f;
-                    if (Mathf.Abs(curW.x - oPos.x) < 0.04f) side = self.index == 0 ? -1f : 1f;
-                    steer += new Vector2(side * 1.2f, 0f);
-                }
-            }
-
-            Vector2 moveDir = (dir + steer).normalized;
+            const float padX = 0.08f;
+            const float padY = 0.05f;
             float stepLen = Mathf.Min(dist, worldSpeed * dt);
-            Vector2 desired = curW + moveDir * stepLen;
-            return ClampAndSlideWorldPos(curW, desired, 0.20f, 0.14f);
+            Vector2 dir = toGoal / dist;
+
+            // 1. 先测直线路径是否畅通：若前方短前瞻与本帧步长均无障碍，立即解除绕障侧记忆并直线高速奔向目标！
+            float lookDist = Mathf.Min(dist, Mathf.Max(stepLen * 1.5f, 0.34f));
+            Vector2 directStep = curW + dir * stepLen;
+            Vector2 directProbe = curW + dir * lookDist;
+            if (IsWalkableWorldPoint(directStep, padX, padY) && IsWalkableWorldPoint(directProbe, padX, padY))
+            {
+                self.avoidSide = 0;
+                return ClampAndSlideWorldPos(curW, directStep, padX, padY);
+            }
+
+            // 2. 前方有建筑或林缘拐角阻挡：执行多角度扇形触须探测，并锁定同一绕行侧 (avoidSide)，彻底杜绝左右摇摆死锁！
+            for (int a = 0; a < FanAnglesDeg.Length; a++)
+            {
+                float ang = FanAnglesDeg[a];
+                int firstSign = self.avoidSide != 0 ? self.avoidSide : 1;
+
+                Vector2 dirA = RotateVec(dir, ang * firstSign);
+                Vector2 dirB = RotateVec(dir, -ang * firstSign);
+                bool okA = IsWalkableWorldPoint(curW + dirA * stepLen, padX, padY) &&
+                           IsWalkableWorldPoint(curW + dirA * Mathf.Min(0.32f, lookDist), padX, padY);
+                bool okB = IsWalkableWorldPoint(curW + dirB * stepLen, padX, padY) &&
+                           IsWalkableWorldPoint(curW + dirB * Mathf.Min(0.32f, lookDist), padX, padY);
+
+                if (self.avoidSide != 0)
+                {
+                    if (okA) return ClampAndSlideWorldPos(curW, curW + dirA * stepLen, padX, padY);
+                    if (okB)
+                    {
+                        self.avoidSide = -firstSign;
+                        return ClampAndSlideWorldPos(curW, curW + dirB * stepLen, padX, padY);
+                    }
+                }
+                else if (okA || okB)
+                {
+                    int chosenSign;
+                    Vector2 chosenDir;
+                    if (okA && okB)
+                    {
+                        float dA = Vector2.Distance(curW + dirA * lookDist, goalW);
+                        float dB = Vector2.Distance(curW + dirB * lookDist, goalW);
+                        if (dA <= dB) { chosenSign = firstSign; chosenDir = dirA; }
+                        else { chosenSign = -firstSign; chosenDir = dirB; }
+                    }
+                    else if (okA)
+                    {
+                        chosenSign = firstSign;
+                        chosenDir = dirA;
+                    }
+                    else
+                    {
+                        chosenSign = -firstSign;
+                        chosenDir = dirB;
+                    }
+                    self.avoidSide = chosenSign;
+                    return ClampAndSlideWorldPos(curW, curW + chosenDir * stepLen, padX, padY);
+                }
+            }
+
+            return ClampAndSlideWorldPos(curW, directStep, padX, padY);
         }
 
         Vector2 GetChopStandWorldPos(Walker w, ChopTask task)
         {
             Vector2 targetW = ForestSliceView.Iso(task.gx, task.gy);
+            Vector2 curW = ForestSliceView.Iso(w.gx, w.gy);
             if (task.isPile)
             {
-                // 站在原木堆/浆果丛/废铁残骸的左右外侧挥斧/挥管钳，绝不踩到物品贴图上！
-                Vector2 leftStand = targetW + new Vector2(-0.62f, -0.02f);
-                Vector2 rightStand = targetW + new Vector2(0.62f, -0.02f);
-                Vector2 curW = ForestSliceView.Iso(w.gx, w.gy);
-                bool leftOk = IsInsideClearedBoundary(leftStand, 0.30f);
-                bool rightOk = IsInsideClearedBoundary(rightStand, 0.30f);
-                if (leftOk && !rightOk) return leftStand;
-                if (rightOk && !leftOk) return rightStand;
-                return Vector2.Distance(curW, leftStand) <= Vector2.Distance(curW, rightStand) ? leftStand : rightStand;
+                // 站在采集点/遗迹发现物的紧邻可行走外侧挥斧或拆解
+                Vector2[] offsets =
+                {
+                    new Vector2(-0.42f, -0.02f),
+                    new Vector2(0.42f, -0.02f),
+                    new Vector2(0f, 0.28f),
+                    new Vector2(0f, -0.28f),
+                };
+                Vector2 best = curW;
+                float bestDist = float.MaxValue;
+                bool found = false;
+                for (int k = 0; k < offsets.Length; k++)
+                {
+                    Vector2 cand = targetW + offsets[k];
+                    if (!IsInsideClearedBoundary(cand, 0.12f)) continue;
+                    float d = Vector2.Distance(curW, cand);
+                    if (d < bestDist)
+                    {
+                        bestDist = d;
+                        best = cand;
+                        found = true;
+                    }
+                }
+                if (found) return best;
+
+                for (int s = 1; s <= 12; s++)
+                {
+                    Vector2 cand = Vector2.Lerp(targetW, curW, s / 12f);
+                    if (IsInsideClearedBoundary(cand, 0.12f))
+                        return cand;
+                }
+                return targetW;
             }
             else
             {
-                // 砍伐外围树林区块：停在已开垦林缘内侧安全线挥斧
-                Vector2 curW = ForestSliceView.Iso(w.gx, w.gy);
-                for (int s = 1; s <= 12; s++)
+                // 砍伐外围树林区块：直接走到紧贴林缘树根处挥斧，不再停在老远之外！
+                for (int s = 1; s <= 16; s++)
                 {
-                    float t = s / 12f;
+                    float t = s / 16f;
                     Vector2 cand = Vector2.Lerp(targetW, curW, t);
-                    if (IsWalkableWorldPoint(cand, 0.18f, 0.12f))
+                    if (IsWalkableWorldPoint(cand, 0.08f, 0.05f))
                         return cand;
                 }
                 return curW;
@@ -958,27 +1613,34 @@ namespace Mori.ForestSlice
 
         void ResolveActorSeparation()
         {
-            // 严格不穿模分离椭圆（sepX=0.58, sepY=0.72）：优先让正在移动的角色绕开驻守待机的伙伴，不把伙伴推离固定工位！
-            const float sepX = 0.58f;
-            const float sepY = 0.72f;
+            // 柔和肩宽防重叠（sepX=0.30, sepY=0.20）：主角阿澈 (index==0) 拥有最高路权，路过同伴时由同伴轻巧让步，绝不把主角弹开或挡停！
+            const float sepX = 0.30f;
+            const float sepY = 0.20f;
 
-            for (int iter = 0; iter < 3; iter++)
+            for (int iter = 0; iter < 2; iter++)
             {
                 for (int i = 0; i < Walkers.Count; i++)
                 {
                     for (int j = i + 1; j < Walkers.Count; j++)
                     {
-                        Walker a = Walkers[i];
-                        Walker b = Walkers[j];
-                        bool aMoving = a.puppet.Mode == HeroAnimMode.Walk || a.puppet.Mode == HeroAnimMode.Run || a.puppet.Mode == HeroAnimMode.CarryRun;
-                        bool bMoving = b.puppet.Mode == HeroAnimMode.Walk || b.puppet.Mode == HeroAnimMode.Run || b.puppet.Mode == HeroAnimMode.CarryRun;
-                        if (aMoving && !bMoving)
+                        Walker anchor = Walkers[i];
+                        Walker yielder = Walkers[j];
+                        if (yielder.index == 0)
                         {
-                            Walker tmp = a; a = b; b = tmp; // 让固定站桩的伙伴充当锚点 a，移动方 b 主动绕开
+                            Walker tmp = anchor; anchor = yielder; yielder = tmp;
+                        }
+                        else if (anchor.index > 0)
+                        {
+                            bool aMoving = anchor.puppet.Mode == HeroAnimMode.Walk || anchor.puppet.Mode == HeroAnimMode.Run || anchor.puppet.Mode == HeroAnimMode.CarryRun;
+                            bool bMoving = yielder.puppet.Mode == HeroAnimMode.Walk || yielder.puppet.Mode == HeroAnimMode.Run || yielder.puppet.Mode == HeroAnimMode.CarryRun;
+                            if (aMoving && !bMoving)
+                            {
+                                Walker tmp = anchor; anchor = yielder; yielder = tmp;
+                            }
                         }
 
-                        Vector2 wa = ForestSliceView.Iso(a.gx, a.gy);
-                        Vector2 wb = ForestSliceView.Iso(b.gx, b.gy);
+                        Vector2 wa = ForestSliceView.Iso(anchor.gx, anchor.gy);
+                        Vector2 wb = ForestSliceView.Iso(yielder.gx, yielder.gy);
                         float dx = wb.x - wa.x;
                         float dy = wb.y - wa.y;
                         float nx = dx / sepX;
@@ -986,49 +1648,30 @@ namespace Mori.ForestSlice
                         float d2 = nx * nx + ny * ny;
                         if (d2 >= 1f) continue;
 
-                        float clampedY = Mathf.Clamp(dy, -0.18f, 0.18f);
-                        float inv = 1f / Mathf.Sqrt(Mathf.Max(0.0001f, d2));
-                        Vector2[] candidatesForB =
+                        Vector2 pushOut;
+                        if (d2 < 0.0001f)
                         {
-                            wa + new Vector2(dx >= 0f ? sepX : -sepX, clampedY),
-                            wa + new Vector2(dx >= 0f ? -sepX : sepX, clampedY),
-                            wa + new Vector2(dx * inv * 1.04f, dy * inv * 1.04f),
-                            wa + new Vector2(0f, dy >= 0f ? sepY : -sepY),
-                            wa + new Vector2(0f, dy >= 0f ? -sepY : sepY),
-                        };
-
-                        bool resolvedB = false;
-                        float bestDist = float.MaxValue;
-                        Vector2 bestB = wb;
-                        for (int c = 0; c < candidatesForB.Length; c++)
-                        {
-                            Vector2 cand = candidatesForB[c];
-                            if (!IsWalkableWorldPoint(cand, 0.18f, 0.12f)) continue;
-                            float d = Vector2.Distance(wb, cand);
-                            if (d < bestDist)
-                            {
-                                bestDist = d;
-                                bestB = cand;
-                                resolvedB = true;
-                            }
-                        }
-
-                        if (resolvedB)
-                        {
-                            Vector2 gb = ForestSliceView.WorldToGrid(bestB);
-                            b.gx = gb.x;
-                            b.gy = gb.y;
+                            pushOut = wa + new Vector2(sepX, 0f);
                         }
                         else
                         {
-                            Vector2 altA = ClampAndSlideWorldPos(wa, wb + new Vector2(dx >= 0f ? -sepX : sepX, 0f), 0.18f, 0.12f);
-                            Vector2 ga = ForestSliceView.WorldToGrid(altA);
-                            a.gx = ga.x;
-                            a.gy = ga.y;
+                            float inv = 1f / Mathf.Sqrt(d2);
+                            pushOut = wa + new Vector2(nx * inv * sepX * 1.02f, ny * inv * sepY * 1.02f);
                         }
+
+                        Vector2 resolved = ClampAndSlideWorldPos(wb, pushOut, 0.08f, 0.05f);
+                        Vector2 gb = ForestSliceView.WorldToGrid(resolved);
+                        yielder.gx = gb.x;
+                        yielder.gy = gb.y;
                     }
                 }
             }
+        }
+
+        Vector2 GetFishingDockGrid()
+        {
+            CampNode dock = Sim.Find("river_dock");
+            return dock != null ? new Vector2(dock.gx, dock.gy) : new Vector2(13.2f, 5.2f);
         }
 
         // ---------------- 推镜实景钓鱼舞台（骨骼主角阿澈亲自登台执竿！） ----------------
@@ -1048,7 +1691,8 @@ namespace Mori.ForestSlice
 
             if (Walkers.Count > 0 && Walkers[0].tr != null) Walkers[0].tr.gameObject.SetActive(false);
 
-            View.Map.ClearRectInstant(10, 1, 14, 4);
+            Vector2 dg = GetFishingDockGrid();
+            View.Map.ClearRectInstant(Mathf.FloorToInt(dg.x) - 3, Mathf.FloorToInt(dg.y) - 3, Mathf.FloorToInt(dg.x) + 2, Mathf.FloorToInt(dg.y) + 2);
             View.Map.RebuildMask();
             View.RefreshEdges(instant: true);
 
@@ -1088,7 +1732,7 @@ namespace Mori.ForestSlice
             }
 
             _fishRoot.SetActive(true);
-            Vector3 dockPos = ForestSliceView.Iso(12.45f, 4.45f);
+            Vector3 dockPos = ForestSliceView.Iso(dg.x, dg.y);
             _fishPuppet.SyncWorldPos(dockPos + new Vector3(-0.08f, 0.12f, 0f), null, sortingBias: 30);
             _fishPuppet.SetMode(HeroAnimMode.Idle);
             _fishPuppet.Tick(0.02f);
@@ -1102,15 +1746,16 @@ namespace Mori.ForestSlice
             FishBobberInWater = true;
             FishBitingNow = false;
             _fishAnimTime = 0f;
+            Vector2 dg = GetFishingDockGrid();
             if (_bobberTr != null)
             {
                 _bobberTr.gameObject.SetActive(true);
-                _bobberTr.localPosition = ForestSliceView.Iso(11.6f, 3.65f);
+                _bobberTr.localPosition = ForestSliceView.Iso(dg.x - 0.85f, dg.y - 0.80f);
             }
             if (_fishShadowTr != null)
             {
                 _fishShadowTr.gameObject.SetActive(true);
-                _fishShadowTr.localPosition = ForestSliceView.Iso(10.8f, 3.2f);
+                _fishShadowTr.localPosition = ForestSliceView.Iso(dg.x - 1.65f, dg.y - 1.25f);
             }
         }
 
@@ -1129,7 +1774,8 @@ namespace Mori.ForestSlice
             if (_fishShadowTr != null) _fishShadowTr.gameObject.SetActive(false);
             if (_leapingFishTr != null && _anglerTr != null)
             {
-                _leapFrom = ForestSliceView.Iso(11.6f, 3.65f);
+                Vector2 dg = GetFishingDockGrid();
+                _leapFrom = ForestSliceView.Iso(dg.x - 0.85f, dg.y - 0.80f);
                 _leapTo = _anglerTr.localPosition + new Vector3(0.05f, 0.35f, 0f);
                 _leapTimer = 0.55f;
                 _leapingFishTr.gameObject.SetActive(true);
@@ -1194,14 +1840,102 @@ namespace Mori.ForestSlice
             WildActors.Add(a);
         }
 
+        // ---------------- 独立策略战场兼容包装接口（统一委托至 ForestTacticalArena） ----------------
         public void StartHordeDefenseWave()
         {
-            if (_hordeWaveRunning || Sim.HordeRepelled) return;
-            _hordeWaveRunning = true;
-            _hordeRemaining = 5;
-            for (int i = 0; i < 5; i++)
-                SpawnWanderingZombie(hordeMember: true);
-            OnCustomToast?.Invoke("尸潮突袭！点击丧尸或靠哨塔拒马迎击！", new Vector2(14.8f, 15.0f));
+            if (Arena == null) return;
+            ActiveWaveSpec = Sim.GetWaveSpec(Sim.HordeWaveIndex);
+            Arena.StartStageBattle(Sim.CurrentBattleStage, out _);
+            SyncLegacySquadSlotsFromArena();
+        }
+
+        public void RetreatHordeDefenseWave()
+        {
+            Arena?.ExitArenaToCamp();
+        }
+
+        public void ToggleWaveAutoUlt()
+        {
+            if (Arena != null)
+                Arena.AutoCastUlt = !Arena.AutoCastUlt;
+        }
+
+        public void ToggleWaveSpeed()
+        {
+            Arena?.ToggleSpeed();
+        }
+
+        public bool TryCastWaveHeroSkill(int heroIdx)
+        {
+            return Arena != null && Arena.TryCastHeroUlt(heroIdx);
+        }
+
+        public bool TriggerSquadUltimate(int slotIdx)
+        {
+            if (Arena == null || !Arena.IsBattleActive) return false;
+            if (slotIdx >= 0 && slotIdx < SquadSlots.Count && SquadSlots[slotIdx].hero != null)
+            {
+                int hIdx = Sim.Heroes.IndexOf(SquadSlots[slotIdx].hero);
+                if (hIdx >= 0) return Arena.TryCastHeroUlt(hIdx);
+            }
+            if (slotIdx >= 0 && slotIdx < Arena.HeroStates.Count)
+                return Arena.TryCastHeroUlt(Arena.HeroStates[slotIdx].heroIdx);
+            return false;
+        }
+
+        public void EndWaveDefense(bool victory)
+        {
+            Arena?.ExitArenaToCamp();
+        }
+
+        public void NotifyArenaWaveSettled(bool victory)
+        {
+            SyncLegacySquadSlotsFromArena();
+            if (victory)
+            {
+                for (int i = 0; i < Walkers.Count; i++)
+                    Walkers[i].cheerTimer = 1.8f;
+            }
+        }
+
+        public void NotifyArenaExitedToCamp(bool victory)
+        {
+            SyncCivilianVillagers();
+            for (int i = 0; i < CivilianVillagers.Count; i++)
+            {
+                if (CivilianVillagers[i].tr != null)
+                {
+                    CivilianVillagers[i].tr.gameObject.SetActive(true);
+                    if (victory) CivilianVillagers[i].cheerTimer = 2.2f;
+                }
+            }
+            RefreshWalkerDelegationStations();
+            OnWaveDefenseEnded?.Invoke(victory, ActiveWaveSpec);
+        }
+
+        void SyncLegacySquadSlotsFromArena()
+        {
+            if (Arena == null || !Arena.IsBattleActive) return;
+
+            BarricadeMaxHpCached = Mathf.Max(1f, Arena.TeamTotalMaxHp);
+            BarricadeHp = Arena.TeamTotalHp;
+            WaveTotalZombies = Arena.EnemiesTotal;
+            WaveSpawnPending = Arena.EnemiesAliveAndQueued;
+            WaveKilledZombies = Mathf.Max(0, Arena.EnemiesTotal - Arena.EnemiesAliveAndQueued);
+
+            var hs = Arena.HeroStates;
+            while (SquadSlots.Count > hs.Count)
+                SquadSlots.RemoveAt(SquadSlots.Count - 1);
+            while (SquadSlots.Count < hs.Count)
+                SquadSlots.Add(new SquadCombatSlot());
+
+            for (int i = 0; i < hs.Count; i++)
+            {
+                ArenaHeroHudState st = hs[i];
+                SquadCombatSlot sl = SquadSlots[i];
+                sl.hero = (st.heroIdx >= 0 && st.heroIdx < Sim.Heroes.Count) ? Sim.Heroes[st.heroIdx] : null;
+                sl.rage = st.rage01 * 100f;
+            }
         }
 
         bool TryPickClearedEdgeCell(out float gx, out float gy)
@@ -1220,11 +1954,97 @@ namespace Mori.ForestSlice
                     }
                 }
             }
-            if (list.Count == 0) { gx = 13f; gy = 13f; return false; }
+            if (list.Count == 0) { gx = 13f; gy = 17f; return false; }
             Vector2Int c = list[_rng.Next(list.Count)];
             gx = c.x + 0.5f;
             gy = c.y + 0.5f;
             return true;
+        }
+
+        /// <summary>仅在最外圈未分配生态环带（gx &lt; 4.5 || gx &gt; 27.5 || gy &lt; 4.5 || gy &gt; 27.5 且远离所有已发现建筑）选点再生松木/野果！</summary>
+        bool TryPickOuterPerimeterRegrowCell(out float gx, out float gy)
+        {
+            var list = new List<Vector2Int>();
+            for (int x = 1; x < ForestMap.N - 1; x++)
+            {
+                for (int y = 1; y < ForestMap.N - 1; y++)
+                {
+                    float cx = x + 0.5f, cy = y + 0.5f;
+                    if (IsInPermanentCampTerritory(cx, cy)) continue;
+                    if (!View.Map.IsCleared(x, y) || IsGridCoveredByForest(cx, cy) || ForestMap.IsNearRiver(x, y)) continue;
+                    if (!View.Map.IsCleared(x - 1, y) || !View.Map.IsCleared(x + 1, y) ||
+                        !View.Map.IsCleared(x, y - 1) || !View.Map.IsCleared(x, y + 1))
+                    {
+                        if (IsWalkableWorldPoint(ForestSliceView.Iso(cx, cy), 0.16f, 0.12f))
+                            list.Add(new Vector2Int(x, y));
+                    }
+                }
+            }
+            if (list.Count == 0) { gx = 0f; gy = 0f; return false; }
+            Vector2Int pick = list[_rng.Next(list.Count)];
+            gx = pick.x + 0.5f;
+            gy = pick.y + 0.5f;
+            return true;
+        }
+
+        /// <summary>在距离所有已发现/激活建筑 &gt;= minNodeDist 的远端已开垦林缘选点刷新散落木堆或野生浆果，绝不侵入营地广场！</summary>
+        bool TryPickOuterResourceEdgeCell(float minNodeDist, out float gx, out float gy)
+        {
+            var list = new List<Vector2Int>();
+            for (int x = 1; x < ForestMap.N - 1; x++)
+            {
+                for (int y = 1; y < ForestMap.N - 1; y++)
+                {
+                    float cx = x + 0.5f, cy = y + 0.5f;
+                    if (!View.Map.IsCleared(x, y) || IsGridCoveredByForest(cx, cy) || ForestMap.IsNearRiver(x, y)) continue;
+                    if (IsNearAnyUncoveredOrActiveNode(cx, cy, minNodeDist)) continue;
+                    if (!View.Map.IsCleared(x - 1, y) || !View.Map.IsCleared(x + 1, y) ||
+                        !View.Map.IsCleared(x, y - 1) || !View.Map.IsCleared(x, y + 1))
+                    {
+                        if (IsWalkableWorldPoint(ForestSliceView.Iso(cx, cy), 0.16f, 0.12f))
+                            list.Add(new Vector2Int(x, y));
+                    }
+                }
+            }
+            if (list.Count == 0) { gx = 0f; gy = 0f; return false; }
+            Vector2Int pick = list[_rng.Next(list.Count)];
+            gx = pick.x + 0.5f;
+            gy = pick.y + 0.5f;
+            return true;
+        }
+
+        int ClearUncoveredNodeMarginsAfterChop(int choppedCx, int choppedCy)
+        {
+            int uncoveredCount = 0;
+            for (int i = 0; i < Sim.Nodes.Count; i++)
+            {
+                CampNode n = Sim.Nodes[i];
+                if (n.state != NodeState.HiddenInForest) continue;
+
+                int nodeChunkX = Mathf.FloorToInt(n.gx) / ForestMap.ChunkSize;
+                int nodeChunkY = Mathf.FloorToInt(n.gy) / ForestMap.ChunkSize;
+                bool matchesChop = (n.revealChunkX == choppedCx && n.revealChunkY == choppedCy) ||
+                                   (nodeChunkX == choppedCx && nodeChunkY == choppedCy);
+
+                if (!matchesChop)
+                {
+                    int rx0 = n.revealChunkX * ForestMap.ChunkSize;
+                    int ry0 = n.revealChunkY * ForestMap.ChunkSize;
+                    int clearedInChunk = 0;
+                    for (int x = rx0; x < rx0 + ForestMap.ChunkSize; x++)
+                        for (int y = ry0; y < ry0 + ForestMap.ChunkSize; y++)
+                            if (View.Map.IsCleared(x, y)) clearedInChunk++;
+
+                    if (clearedInChunk >= 6 && View.Map.IsCleared(Mathf.FloorToInt(n.gx), Mathf.FloorToInt(n.gy)))
+                        matchesChop = true;
+                }
+
+                if (!matchesChop) continue;
+
+                EnsureNodePlotMarginCleared(n);
+                uncoveredCount++;
+            }
+            return uncoveredCount;
         }
 
         public void ResolveWildActor(WildActor a, bool autoByTower = false)
@@ -1261,8 +2081,8 @@ namespace Mori.ForestSlice
                         Sim.Add(SurvRes.Blueprint, 3, true);
                         Sim.Add(SurvRes.Scrap, 12, true);
                         Sim.Add(SurvRes.Parts, 3, true);
-                        Sim.AddXp(60, new Vector2(16.4f, 16.2f));
-                        OnCustomToast?.Invoke("成功击退尸潮！获工程手稿+3 · 铜币+350 · 废铁+12！", new Vector2(16.4f, 16.2f));
+                        Sim.AddXp(60, new Vector2(15.8f, 18.4f));
+                        OnCustomToast?.Invoke("成功击退尸潮！获工程手稿+3 · 铜币+350 · 废铁+12！", new Vector2(15.8f, 18.4f));
                     }
                 }
             }
@@ -1276,7 +2096,7 @@ namespace Mori.ForestSlice
             WildActors.Remove(a);
         }
 
-        // ---------------- 采集 / 拆解 / 砍树结算（严格区分产出，绝不串味！） ----------------
+        // ---------------- 采集 / 拆解 / 砍树结算（严格区分产出，支持遗迹发现物收集整合！） ----------------
         SurvRes FinishChopTask(ChopTask task)
         {
             SurvRes carried = SurvRes.Wood;
@@ -1284,13 +2104,29 @@ namespace Mori.ForestSlice
             if (task.isPile && task.pile != null)
             {
                 GroundPile p = task.pile;
-                if (p.kind == FieldKind.BerryBush)
+                Vector3 burstPos = ForestSliceView.Iso(p.gx, p.gy);
+                string salvageId = p.salvageNodeId;
+
+                if (p.go != null) DestroyGo(p.go);
+                if (p.shadowGo != null) DestroyGo(p.shadowGo);
+                GroundPiles.Remove(p);
+
+                if (!string.IsNullOrEmpty(salvageId))
+                {
+                    CampNode sn = Sim.Find(salvageId);
+                    carried = sn != null ? sn.salvageBonusRes : SurvRes.Wood;
+                    View.BurstChips(burstPos, 18);
+                    Sim.CompleteNodeSiteSalvage(salvageId);
+                }
+                else if (p.kind == FieldKind.BerryBush)
                 {
                     carried = SurvRes.Veggie;
                     Sim.Add(SurvRes.Veggie, p.amount, true);
                     Sim.Add(SurvRes.Cloth, 2, true);
+                    Sim.AwardRandomWildSeed(1, notify: true);
                     if (Sim.CampLevel >= 4) Sim.Add(SurvRes.Herb, 2, true);
                     Sim.AddXp(8, new Vector2(p.gx, p.gy));
+                    View.BurstChips(burstPos, 12);
                 }
                 else if (p.kind == FieldKind.ScrapWreck)
                 {
@@ -1300,18 +2136,15 @@ namespace Mori.ForestSlice
                     if (_rng.NextDouble() < 0.45)
                         Sim.Add(SurvRes.Parts, 1, true);
                     Sim.AddXp(10, new Vector2(p.gx, p.gy));
+                    View.BurstChips(burstPos, 12);
                 }
                 else
                 {
                     carried = SurvRes.Wood;
                     Sim.Add(SurvRes.Wood, p.amount, true);
                     Sim.AddXp(6, new Vector2(p.gx, p.gy));
+                    View.BurstChips(burstPos, 12);
                 }
-
-                View.BurstChips(ForestSliceView.Iso(p.gx, p.gy), 12);
-                if (p.go != null) DestroyGo(p.go);
-                if (p.shadowGo != null) DestroyGo(p.shadowGo);
-                GroundPiles.Remove(p);
             }
             else
             {
@@ -1321,25 +2154,31 @@ namespace Mori.ForestSlice
                     if (Sim.Get(SurvRes.Ration) >= ForestSurvivalSim.ChopRationCost)
                         Sim.Add(SurvRes.Ration, -ForestSurvivalSim.ChopRationCost);
 
-                    // 砍伐树林产出原木，中后期砍林伴生采获少量野生草药！
+                    // 砍伐树林产出原木 + 保底掉落作物种子，中后期伴生采获野生草药！
                     Sim.Add(SurvRes.Wood, ForestSurvivalSim.ChopWoodGain, true);
+                    Sim.AwardRandomWildSeed(1, notify: true);
                     if (Sim.CampLevel >= 4 && _rng.NextDouble() < 0.55)
                         Sim.Add(SurvRes.Herb, 2, true);
                     Sim.AddXp(10, new Vector2(task.gx, task.gy));
 
-                    // 砍开密林后，地面有机会显露出原本被树冠遮挡的【山道锈铁残骸】或【野生浆果丛】（需要玩家再派人去拆解/采摘）
-                    double roll = _rng.NextDouble();
-                    if (roll < 0.48 && CountFieldKind(FieldKind.ScrapWreck) < 4)
-                    {
-                        SpawnFieldNode(FieldKind.ScrapWreck, task.gx + 0.3f, task.gy - 0.3f, 6);
-                        OnCustomToast?.Invoke("林下显露出旧山道【锈铁残骸】，可点击拆解废铁！", new Vector2(task.gx, task.gy));
-                    }
-                    else if (roll < 0.80 && CountFieldKind(FieldKind.BerryBush) < 4)
-                    {
-                        SpawnFieldNode(FieldKind.BerryBush, task.gx - 0.3f, task.gy + 0.2f, 3);
-                    }
-
+                    // 若本次砍伐揭露了新建筑区域，同步清理其地基四周 1 格余量确保地基利落无残留树干，并触发发现物生成！
+                    int uncoveredNodes = ClearUncoveredNodeMarginsAfterChop(task.chunkX, task.chunkY);
                     Sim.SyncRevealedNodes(View.Map, silent: false);
+
+                    // 仅当未揭露建筑遗迹且位于远离建筑的外围林缘时，才概率显露额外野生残骸/浆果丛
+                    if (uncoveredNodes == 0 && !IsNearAnyUncoveredOrActiveNode(task.gx, task.gy, 5.2f))
+                    {
+                        double roll = _rng.NextDouble();
+                        if (roll < 0.45 && CountFieldKind(FieldKind.ScrapWreck) < 3)
+                        {
+                            SpawnFieldNode(FieldKind.ScrapWreck, task.gx + 0.3f, task.gy - 0.3f, 6);
+                            OnCustomToast?.Invoke("林下显露出旧山道【锈铁残骸】，可点击拆解废铁！", new Vector2(task.gx, task.gy));
+                        }
+                        else if (roll < 0.76 && CountFieldKind(FieldKind.BerryBush) < 3)
+                        {
+                            SpawnFieldNode(FieldKind.BerryBush, task.gx - 0.3f, task.gy + 0.2f, 3);
+                        }
+                    }
                 }
             }
             ChopQueue.Remove(task);
@@ -1382,21 +2221,33 @@ namespace Mori.ForestSlice
                     HasPendingChop = false;
             }
 
-            // 林缘自然生态再生：仅在最外圈林缘稀疏萌发（上限 2 处），保持营地干净开阔！
+            // 永久领地不复林规则：已扩展营地腹地绝不长回任何树木！仅最外圈生态环或远离所有建筑 >=5.5 格的远端林缘稀疏刷新资源
             _berryRegrowTimer -= dt;
             if (_berryRegrowTimer <= 0f)
             {
                 _berryRegrowTimer = 22f;
-                if (CountFieldKind(FieldKind.BerryBush) < 2 && TryPickClearedEdgeCell(out float bx, out float by))
-                    SpawnFieldNode(FieldKind.BerryBush, bx, by, 3);
+                if (CountFieldKind(FieldKind.BerryBush) < 2)
+                {
+                    if (TryPickOuterPerimeterRegrowCell(out float bx, out float by) ||
+                        TryPickOuterResourceEdgeCell(5.5f, out bx, out by))
+                    {
+                        SpawnFieldNode(FieldKind.BerryBush, bx, by, 3);
+                    }
+                }
             }
 
             _timberRegrowTimer -= dt;
             if (_timberRegrowTimer <= 0f)
             {
                 _timberRegrowTimer = 24f;
-                if (CountFieldKind(FieldKind.RegrownTimber) < 2 && TryPickClearedEdgeCell(out float tx, out float ty))
+                if (CountFieldKind(FieldKind.RegrownTimber) < 2 && TryPickOuterPerimeterRegrowCell(out float tx, out float ty))
+                {
                     SpawnFieldNode(FieldKind.RegrownTimber, tx, ty, 7);
+                }
+                else if (CountFieldKind(FieldKind.LogPile) < 2 && TryPickOuterResourceEdgeCell(5.5f, out float lx, out float ly))
+                {
+                    SpawnFieldNode(FieldKind.LogPile, lx, ly, 6);
+                }
             }
 
             if (_fishingActive && _fishRoot != null)
@@ -1409,13 +2260,14 @@ namespace Mori.ForestSlice
                 }
                 if (FishBobberInWater && _bobberTr != null)
                 {
-                    Vector3 baseBob = ForestSliceView.Iso(11.6f, 3.65f);
+                    Vector2 dg = GetFishingDockGrid();
+                    Vector3 baseBob = ForestSliceView.Iso(dg.x - 0.85f, dg.y - 0.80f);
                     float dip = FishBitingNow ? Mathf.Sin(_fishAnimTime * 22f) * 0.08f - 0.05f : Mathf.Sin(_fishAnimTime * 4f) * 0.025f;
                     _bobberTr.localPosition = baseBob + new Vector3(0f, dip, 0f);
 
                     if (_fishShadowTr != null && _fishShadowTr.gameObject.activeSelf)
                     {
-                        Vector3 target = FishBitingNow ? baseBob + new Vector3(-0.08f, -0.04f, 0f) : ForestSliceView.Iso(11.1f + Mathf.Sin(_fishAnimTime * 1.8f) * 0.35f, 3.45f);
+                        Vector3 target = FishBitingNow ? baseBob + new Vector3(-0.08f, -0.04f, 0f) : ForestSliceView.Iso(dg.x - 1.35f + Mathf.Sin(_fishAnimTime * 1.8f) * 0.35f, dg.y - 1.0f);
                         _fishShadowTr.localPosition = Vector3.Lerp(_fishShadowTr.localPosition, target, dt * 4.5f);
                     }
                 }
@@ -1493,7 +2345,7 @@ namespace Mori.ForestSlice
 
                     if (distToStand > 0.14f && task.chopProgress <= 0f)
                     {
-                        Vector2 nextW = StepWalkerAroundObstacles(w, curW, standW, 2.35f, dt);
+                        Vector2 nextW = StepWalkerAroundObstacles(w, curW, standW, 2.65f, dt);
                         Vector2 moveDelta = nextW - curW;
                         if (Mathf.Abs(moveDelta.x) > 0.002f) w.puppet.SetFacing(moveDelta.x >= 0f);
                         Vector2 ng = ForestSliceView.WorldToGrid(nextW);
@@ -1501,10 +2353,10 @@ namespace Mori.ForestSlice
                         w.gy = ng.y;
                         w.puppet.SetMode(HeroAnimMode.Run);
 
-                        if (moveDelta.magnitude < 0.25f * dt)
+                        if (moveDelta.magnitude < 0.15f * dt)
                         {
                             w.stuckTimer += dt;
-                            if (w.stuckTimer > 0.35f) task.chopProgress = 0.001f;
+                            if (w.stuckTimer > 0.65f) task.chopProgress = 0.001f;
                         }
                         else w.stuckTimer = 0f;
                     }
@@ -1523,8 +2375,9 @@ namespace Mori.ForestSlice
                             w.carryHomeTimer = 0.95f;
                             if (w.index == 0)
                             {
-                                w.targetGx = 16.4f;
-                                w.targetGy = 16.4f;
+                                Vector2 homeStep = Vector2.MoveTowards(new Vector2(w.gx, w.gy), new Vector2(15.8f, 18.4f), 1.35f);
+                                w.targetGx = homeStep.x;
+                                w.targetGy = homeStep.y;
                             }
                             else
                             {
@@ -1553,13 +2406,31 @@ namespace Mori.ForestSlice
                     }
                 }
 
+                if (w.manualDriveHold > 0f)
+                {
+                    w.manualDriveHold = Mathf.Max(0f, w.manualDriveHold - dt);
+                    preTickGoals[i] = ForestSliceView.Iso(w.gx, w.gy);
+                    continue;
+                }
+
                 Vector2 curWorld = ForestSliceView.Iso(w.gx, w.gy);
                 Vector2 goalWorld = ForestSliceView.Iso(w.targetGx, w.targetGy);
+                if (Vector2.Distance(curWorld, goalWorld) >= 0.06f && !IsWalkableWorldPoint(goalWorld, 0.08f, 0.05f))
+                {
+                    if (TryResolveWalkDestination(curWorld, goalWorld, out Vector2 resolvedGoal))
+                    {
+                        Vector2 rg = ForestSliceView.WorldToGrid(resolvedGoal);
+                        w.targetGx = rg.x;
+                        w.targetGy = rg.y;
+                        goalWorld = resolvedGoal;
+                    }
+                }
                 preTickGoals[i] = goalWorld;
                 float wDist = Vector2.Distance(curWorld, goalWorld);
                 if (wDist < 0.06f)
                 {
                     w.hasManualMove = false;
+                    w.avoidSide = 0;
                     w.stuckTimer = 0f;
                     w.puppet.SetMode(w.cheerTimer > 0f ? HeroAnimMode.Cheer : HeroAnimMode.Idle);
                     if (w.index > 0)
@@ -1575,7 +2446,7 @@ namespace Mori.ForestSlice
                 else
                 {
                     bool brisk = w.hasManualMove || w.carryHomeTimer > 0f;
-                    float worldSpd = brisk ? 2.10f : 0.76f;
+                    float worldSpd = brisk ? 2.55f : 0.78f;
                     Vector2 nextWorld = StepWalkerAroundObstacles(w, curWorld, goalWorld, worldSpd, dt);
                     Vector2 stepDelta = nextWorld - curWorld;
                     if (Mathf.Abs(stepDelta.x) > 0.002f) w.puppet.SetFacing(stepDelta.x >= 0f);
@@ -1587,29 +2458,27 @@ namespace Mori.ForestSlice
                 }
             }
 
-            // 统一执行全员防穿模互推解算，并严格校验【向目标推进速率】，彻底根除原地踏步！
+            // 统一执行柔和肩宽分离，仅在真实世界位移近乎 0 时才判定阻滞（绝不误杀沿建筑弧线切向滑行的绕障动作！）
             ResolveActorSeparation();
             for (int i = 0; i < Walkers.Count; i++)
             {
                 Walker w = Walkers[i];
                 Vector2 postWorld = ForestSliceView.Iso(w.gx, w.gy);
                 float actualSpeed = dt > 0.0001f ? Vector2.Distance(preTickWorlds[i], postWorld) / dt : 0f;
-                float preGoalDist = Vector2.Distance(preTickWorlds[i], preTickGoals[i]);
-                float postGoalDist = Vector2.Distance(postWorld, preTickGoals[i]);
-                float progressSpeed = dt > 0.0001f ? (preGoalDist - postGoalDist) / dt : 0f;
 
                 HeroAnimMode curMode = w.puppet.Mode;
-                if (curMode == HeroAnimMode.Walk || curMode == HeroAnimMode.Run || curMode == HeroAnimMode.CarryRun)
+                if (w.manualDriveHold <= 0f && (curMode == HeroAnimMode.Walk || curMode == HeroAnimMode.Run || curMode == HeroAnimMode.CarryRun))
                 {
-                    bool stalled = actualSpeed < 0.20f || (postGoalDist > 0.08f && progressSpeed < 0.06f);
-                    if (stalled)
+                    if (actualSpeed < 0.10f)
                     {
                         w.stuckTimer += dt;
-                        // 只要没有实质向前移动，当帧立即切回 Idle 待机呼吸，绝不播放哪怕 1 帧原地走路！
-                        w.puppet.SetMode(w.cheerTimer > 0f ? HeroAnimMode.Cheer : HeroAnimMode.Idle);
-                        if (w.stuckTimer > 0.22f)
+                        if (w.stuckTimer > 0.12f)
+                            w.puppet.SetMode(w.cheerTimer > 0f ? HeroAnimMode.Cheer : HeroAnimMode.Idle);
+
+                        if (w.stuckTimer > 0.90f)
                         {
                             w.stuckTimer = 0f;
+                            w.avoidSide = 0;
                             if (w.assignedTask != null)
                             {
                                 w.assignedTask.chopProgress = Mathf.Max(w.assignedTask.chopProgress, 0.001f);
@@ -1633,6 +2502,13 @@ namespace Mori.ForestSlice
 
                 w.puppet.SyncWorldPos(postWorld, w.shadowTr);
                 w.puppet.Tick(dt);
+            }
+
+            if (Walkers.Count > 0)
+            {
+                Vector2 hw = ForestSliceView.Iso(Walkers[0].gx, Walkers[0].gy);
+                View.UpdateHeroCanopyFade(hw, dt);
+                UpdateHeroBuildingFade(hw, dt);
             }
 
             _preyCooldown -= dt;
@@ -1659,6 +2535,7 @@ namespace Mori.ForestSlice
             for (int i = WildActors.Count - 1; i >= 0; i--)
             {
                 WildActor a = WildActors[i];
+                if (a.isHordeRaid && _hordeWaveRunning) continue;
                 a.phase += dt;
                 a.timer -= dt;
                 if (a.timer <= 0f) { RemoveWildActor(a); continue; }
@@ -1710,6 +2587,82 @@ namespace Mori.ForestSlice
                 float tilt = Mathf.Sin(a.phase * 5.5f) * (a.isZombie ? 6f : 2.5f);
                 SyncActorTransform(a.tr, a.sr, a.shadowTr, a.gx, a.gy, hop, tilt);
             }
+
+            TickCivilianVillagers(dt);
+            if (Arena != null && Arena.IsBattleActive)
+            {
+                Arena.Tick(dt);
+                SyncLegacySquadSlotsFromArena();
+            }
+        }
+
+        void TickCivilianVillagers(float dt)
+        {
+            SyncCivilianVillagers();
+            if (InWaveDefense) return;
+
+            for (int i = 0; i < CivilianVillagers.Count; i++)
+            {
+                VillagerActor v = CivilianVillagers[i];
+                if (v.tr == null || !v.tr.gameObject.activeSelf) continue;
+                v.phase += dt;
+                if (v.chatterTimer > 0f) v.chatterTimer = Mathf.Max(0f, v.chatterTimer - dt);
+
+                if (v.cheerTimer > 0f)
+                {
+                    v.cheerTimer = Mathf.Max(0f, v.cheerTimer - dt);
+                    float jump = Mathf.Abs(Mathf.Sin(v.phase * 9.5f)) * 0.09f;
+                    SyncActorTransform(v.tr, v.sr, v.shadowTr, v.gx, v.gy, jump, 0f);
+                    continue;
+                }
+
+                if (v.pauseTimer > 0f)
+                {
+                    v.pauseTimer -= dt;
+                    // 停驻烤火/歇息：只做温和呼吸缩放，绝不原地踏步！
+                    float br = Mathf.Sin(v.phase * 2.6f);
+                    v.tr.localScale = new Vector3(0.68f * (1f - br * 0.008f), 0.68f * (1f + br * 0.012f), 1f);
+                    SyncActorTransform(v.tr, v.sr, v.shadowTr, v.gx, v.gy, 0f, 0f);
+                    if (v.pauseTimer <= 0f)
+                    {
+                        Vector2 wp = VillagerWaypoints[(i + _rng.Next(1, VillagerWaypoints.Length)) % VillagerWaypoints.Length];
+                        v.targetGx = wp.x + ((float)_rng.NextDouble() - 0.5f) * 0.5f;
+                        v.targetGy = wp.y + ((float)_rng.NextDouble() - 0.5f) * 0.5f;
+                        if (_rng.NextDouble() < 0.22)
+                        {
+                            v.chatterText = VillagerAmbientLines[_rng.Next(VillagerAmbientLines.Length)];
+                            v.chatterTimer = 2.8f;
+                        }
+                    }
+                    continue;
+                }
+
+                float dx = v.targetGx - v.gx, dy = v.targetGy - v.gy;
+                float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                if (dist > 0.12f)
+                {
+                    float step = Mathf.Min(dist, dt * 0.82f);
+                    float nx = v.gx + dx / dist * step;
+                    float ny = v.gy + dy / dist * step;
+                    if (!IsInsideClearedBoundary(ForestSliceView.Iso(nx, ny), 0.14f))
+                    {
+                        v.pauseTimer = 1.6f;
+                        continue;
+                    }
+                    v.gx = nx;
+                    v.gy = ny;
+                    Vector3 sd = ForestSliceView.Iso(v.targetGx, v.targetGy) - ForestSliceView.Iso(v.gx, v.gy);
+                    if (Mathf.Abs(sd.x) > 0.01f) v.sr.flipX = sd.x < 0f;
+                    float bob = Mathf.Abs(Mathf.Sin(v.phase * 7.2f)) * 0.032f;
+                    float tilt = Mathf.Sin(v.phase * 7.2f) * 2.6f;
+                    v.tr.localScale = new Vector3(0.68f, 0.68f, 1f);
+                    SyncActorTransform(v.tr, v.sr, v.shadowTr, v.gx, v.gy, bob, tilt);
+                }
+                else
+                {
+                    v.pauseTimer = 2.6f + (float)_rng.NextDouble() * 3.0f;
+                }
+            }
         }
 
         static void SyncActorTransform(Transform tr, SpriteRenderer sr, Transform sh, float gx, float gy, float hopY, float tiltZ)
@@ -1719,6 +2672,15 @@ namespace Mori.ForestSlice
             tr.localRotation = Quaternion.Euler(0f, 0f, tiltZ);
             sr.sortingOrder = Mathf.RoundToInt(-p.y * 100f) + 2;
             if (sh != null) sh.localPosition = p;
+        }
+
+        public bool QueueGroundPile(GroundPile p)
+        {
+            if (p == null || p.queued || !GroundPiles.Contains(p)) return false;
+            HasPendingChop = false;
+            p.queued = true;
+            ChopQueue.Add(new ChopTask { isPile = true, pile = p, gx = p.gx, gy = p.gy });
+            return true;
         }
 
         public void ConfirmPendingChop()
@@ -1734,9 +2696,14 @@ namespace Mori.ForestSlice
 
             if (Sim.Get(SurvRes.Ration) + ChopQueue.Count < ForestSurvivalSim.ChopRationCost)
             {
-                if (CountFieldKind(FieldKind.BerryBush) == 0 && TryPickClearedEdgeCell(out float bx, out float by))
-                    SpawnFieldNode(FieldKind.BerryBush, bx, by, 3);
-                OnCustomToast?.Invoke("口粮不足！请先采摘林边【野生浆果丛】去营地篝火烤制口粮！", new Vector2(16.4f, 16.4f));
+                if (CountFieldKind(FieldKind.BerryBush) == 0)
+                {
+                    if (TryPickOuterResourceEdgeCell(5.5f, out float bx, out float by))
+                        SpawnFieldNode(FieldKind.BerryBush, bx, by, 3);
+                    else
+                        SpawnFieldNode(FieldKind.BerryBush, 12.6f, 20.6f, 3, allowInnerMeadow: true);
+                }
+                OnCustomToast?.Invoke("口粮不足！请先采摘林边【野生浆果丛】去营地炊事房烤制口粮！", new Vector2(15.8f, 18.4f));
                 return;
             }
 
@@ -1748,15 +2715,15 @@ namespace Mori.ForestSlice
         // ---------------- 地面 / 幸存者 / 生态采集点 / 建筑 / 防误触二次确认砍树 点击分发 ----------------
         public void HandleWorldClick(Camera cam, Vector2 screenPos)
         {
-            if (_fishingActive) return;
+            if (_fishingActive || InWaveDefense) return;
             Vector3 wp = cam.ScreenToWorldPoint(new Vector3(screenPos.x, screenPos.y, 0f));
 
-            // 1. 优先精确点中猎物或丧尸（收紧判定半径避免误触）
+            // 1. 优先精确点中营地外围猎物或游荡丧尸
             for (int i = 0; i < WildActors.Count; i++)
             {
                 WildActor a = WildActors[i];
                 Vector3 c = ForestSliceView.Iso(a.gx, a.gy) + new Vector3(0f, 0.26f, 0f);
-                if (Vector2.Distance(wp, c) < 0.48f)
+                if (Vector2.Distance(wp, c) < 0.52f)
                 {
                     HasPendingChop = false;
                     ResolveWildActor(a, autoByTower: false);
@@ -1764,12 +2731,13 @@ namespace Mori.ForestSlice
                 }
             }
 
-            // 2. 精确点中饥饿求食的幸存者
-            if (Sim.ActiveDemand != null && Sim.ActiveDemand.walkerIndex < Walkers.Count)
+            // 2. 精确点中头顶冒订单气泡的普通居民
+            for (int i = 0; i < CivilianVillagers.Count; i++)
             {
-                Walker hw = Walkers[Sim.ActiveDemand.walkerIndex];
-                Vector3 hc = ForestSliceView.Iso(hw.gx, hw.gy) + new Vector3(0f, 0.35f, 0f);
-                if (Vector2.Distance(wp, hc) < 0.46f)
+                VillagerActor cv = CivilianVillagers[i];
+                if (cv.tr == null || !cv.tr.gameObject.activeSelf) continue;
+                Vector3 vc = ForestSliceView.Iso(cv.gx, cv.gy) + new Vector3(0f, 0.34f, 0f);
+                if (Vector2.Distance(wp, vc) < 0.45f)
                 {
                     HasPendingChop = false;
                     OnResidentDemandClicked?.Invoke();
@@ -1777,17 +2745,15 @@ namespace Mori.ForestSlice
                 }
             }
 
-            // 3. 精确点中地面采集/拆解点（半径收紧至 0.42u，只有点在物品本体上才触发采集！）
+            // 3. 精确点中地面采集/拆解点（点选物品本体或头顶气泡均可立即派工采集！）
             for (int i = 0; i < GroundPiles.Count; i++)
             {
                 GroundPile p = GroundPiles[i];
                 if (p.queued) continue;
                 Vector3 pc = ForestSliceView.Iso(p.gx, p.gy) + new Vector3(0f, 0.18f, 0f);
-                if (Vector2.Distance(wp, pc) < 0.42f)
+                if (Vector2.Distance(wp, pc) < 0.48f)
                 {
-                    HasPendingChop = false;
-                    p.queued = true;
-                    ChopQueue.Add(new ChopTask { isPile = true, pile = p, gx = p.gx, gy = p.gy });
+                    QueueGroundPile(p);
                     return;
                 }
             }
@@ -1811,7 +2777,7 @@ namespace Mori.ForestSlice
                 return;
             }
 
-            // 5. 若点击点落在已开垦的营地空地内 -> 100% 归属玩家操控主角移动 & 收起悬浮菜单，绝不误触砍树！
+            // 5. 若点击点落在已开垦的营地空地内 -> 100% 归属玩家操控主角移动 & 收起悬浮菜单，即便点在建筑底座边或树根边也自动吸附最近可行走点！
             Vector2 rawGrid = ForestSliceView.WorldToGrid(wp);
             if (View.Map.IsCleared(Mathf.FloorToInt(rawGrid.x), Mathf.FloorToInt(rawGrid.y)))
             {
@@ -1820,13 +2786,14 @@ namespace Mori.ForestSlice
                 if (Walkers.Count > 0)
                 {
                     Walker hero = Walkers[0];
-                    Vector2 safeWorld = ClampAndSlideWorldPos(ForestSliceView.Iso(hero.gx, hero.gy), wp, 0.22f, 0.16f);
-                    if (IsInsideClearedBoundary(safeWorld, 0.30f))
+                    Vector2 heroWorld = ForestSliceView.Iso(hero.gx, hero.gy);
+                    if (TryResolveWalkDestination(heroWorld, wp, out Vector2 safeWorld))
                     {
                         Vector2 clickGrid = ForestSliceView.WorldToGrid(safeWorld);
                         hero.targetGx = clickGrid.x;
                         hero.targetGy = clickGrid.y;
                         hero.hasManualMove = true;
+                        hero.avoidSide = 0;
                         hero.stuckTimer = 0f;
                         View.BurstChips(safeWorld, 3);
                     }
@@ -1861,11 +2828,124 @@ namespace Mori.ForestSlice
                     PendingChopCx = cx;
                     PendingChopCy = cy;
                     PendingChopTimer = 4.0f;
+                    // 点选林缘树木时同步让空闲主角跑向该处树根边缘，既满足“走到树边”的直觉，又让二次确认砍树零等待挥斧！
+                    if (Walkers.Count > 0 && Walkers[0].assignedTask == null)
+                    {
+                        Walker hero = Walkers[0];
+                        Vector2 heroWorld = ForestSliceView.Iso(hero.gx, hero.gy);
+                        if (TryResolveWalkDestination(heroWorld, wp, out Vector2 edgeStand))
+                        {
+                            Vector2 eg = ForestSliceView.WorldToGrid(edgeStand);
+                            hero.targetGx = eg.x;
+                            hero.targetGy = eg.y;
+                            hero.hasManualMove = true;
+                            hero.avoidSide = 0;
+                            hero.stuckTimer = 0f;
+                        }
+                    }
                 }
                 return;
             }
 
+            // 点在更外围树海或河岸边时，同样让空闲主角顺着点击方向一直跑到最近的林缘/河岸边！
+            if (Walkers.Count > 0 && Walkers[0].assignedTask == null)
+            {
+                Walker hero = Walkers[0];
+                Vector2 heroWorld = ForestSliceView.Iso(hero.gx, hero.gy);
+                if (TryResolveWalkDestination(heroWorld, wp, out Vector2 edgeStand))
+                {
+                    Vector2 eg = ForestSliceView.WorldToGrid(edgeStand);
+                    hero.targetGx = eg.x;
+                    hero.targetGy = eg.y;
+                    hero.hasManualMove = true;
+                    hero.avoidSide = 0;
+                    hero.stuckTimer = 0f;
+                    View.BurstChips(edgeStand, 3);
+                }
+            }
             HasPendingChop = false;
+        }
+
+        bool TryResolveWalkDestination(Vector2 heroWorld, Vector2 clickWorld, out Vector2 outWorld)
+        {
+            const float padX = 0.08f;
+            const float padY = 0.05f;
+
+            if (IsWalkableWorldPoint(clickWorld, padX, padY))
+            {
+                outWorld = clickWorld;
+                return true;
+            }
+
+            // 1. 若点在建筑脚底边缘或林缘树根线上，先在点击点周围小半径环内吸附最近可行走点
+            float[] radii = { 0.14f, 0.28f, 0.44f, 0.64f };
+            Vector2 toHero = (heroWorld - clickWorld);
+            float baseAng = toHero.sqrMagnitude > 0.0001f ? Mathf.Atan2(toHero.y, toHero.x) : 0f;
+            for (int rIdx = 0; rIdx < radii.Length; rIdx++)
+            {
+                float r = radii[rIdx];
+                float bestScore = float.MaxValue;
+                Vector2 bestPt = clickWorld;
+                bool found = false;
+                for (int s = 0; s < 12; s++)
+                {
+                    float ang = baseAng + s * (Mathf.PI * 2f / 12f);
+                    Vector2 cand = clickWorld + new Vector2(Mathf.Cos(ang) * r, Mathf.Sin(ang) * r);
+                    if (!IsWalkableWorldPoint(cand, padX, padY)) continue;
+                    float d = Vector2.Distance(cand, clickWorld) + Vector2.Distance(cand, heroWorld) * 0.08f;
+                    if (d < bestScore)
+                    {
+                        bestScore = d;
+                        bestPt = cand;
+                        found = true;
+                    }
+                }
+                if (found)
+                {
+                    outWorld = bestPt;
+                    return true;
+                }
+            }
+
+            // 2. 若点在远端密林或河道内，沿【点击点 -> 主角】连线回退找到最贴近林缘/河岸的可站立落点！
+            for (int step = 1; step <= 28; step++)
+            {
+                float t = step / 28f;
+                Vector2 cand = Vector2.Lerp(clickWorld, heroWorld, t);
+                if (IsWalkableWorldPoint(cand, padX, padY))
+                {
+                    outWorld = cand;
+                    return true;
+                }
+            }
+
+            outWorld = heroWorld;
+            return false;
+        }
+
+        void UpdateHeroBuildingFade(Vector2 heroWorld, float dt)
+        {
+            float k = Mathf.Clamp01(dt * 10f);
+            foreach (var kv in Visuals)
+            {
+                NodeVisual nv = kv.Value;
+                if (nv == null || nv.node == null || nv.sr == null || nv.go == null || !nv.go.activeSelf) continue;
+                if (nv.node.kind == NodeKind.Farm) continue;
+                bool isGhost = nv.node.state == NodeState.Discovered && !IsPhysicalRelicKind(nv.node.kind);
+                if (isGhost) continue;
+
+                Vector3 bp = nv.go.transform.localPosition;
+                bool occludingHero = bp.y < heroWorld.y - 0.08f &&
+                                     (heroWorld.y - bp.y) < 1.15f &&
+                                     Mathf.Abs(bp.x - heroWorld.x) < 0.56f;
+                float targetA = occludingHero ? 0.54f : 1f;
+                Color c = nv.sr.color;
+                if (Mathf.Abs(c.a - targetA) > 0.004f)
+                {
+                    c.a = Mathf.MoveTowards(c.a, targetA, k);
+                    nv.sr.color = c;
+                }
+            }
         }
 
         static void DestroyGo(GameObject go)

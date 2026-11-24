@@ -49,6 +49,7 @@ namespace Mori.ForestSlice
     {
         public string characterId;
         public string displayName;
+        public string singleBodySpriteKey; // 若设置则直接使用整身手绘精灵驱动呼吸/步伐/后坐力（如铁叔）
         public float baseScale = 0.92f;
         public bool showGroundRing;
         public Color ringTint = new Color(0.28f, 0.92f, 1f, 1f);
@@ -211,6 +212,22 @@ namespace Mori.ForestSlice
                     new OutfitTierDef { tier = OutfitTier.Armored, requireShelterLv = 3, tierName = "防暴重装", atlasKey = "dachui_puppet_atlas_t2", bustKey = "bust_dachui_t2" },
                 }
             },
+            ["tieshu"] = new PuppetRigProfile
+            {
+                characterId = "tieshu",
+                displayName = "铁叔",
+                singleBodySpriteKey = "survivor_tieshu",
+                baseScale = 0.65f,
+                showGroundRing = false,
+                ringTint = new Color(0.95f, 0.72f, 0.28f, 0.85f),
+                slashTint = new Color(1f, 0.86f, 0.42f, 1f),
+                tiers = new[]
+                {
+                    new OutfitTierDef { tier = OutfitTier.Refugee, requireShelterLv = 1, tierName = "逃难初装", atlasKey = "hero_puppet_atlas", bustKey = "survivor_tieshu" },
+                    new OutfitTierDef { tier = OutfitTier.Reinforced, requireShelterLv = 2, tierName = "加固车手服", atlasKey = "hero_puppet_atlas", bustKey = "survivor_tieshu" },
+                    new OutfitTierDef { tier = OutfitTier.Armored, requireShelterLv = 3, tierName = "防弹焊甲", atlasKey = "hero_puppet_atlas", bustKey = "survivor_tieshu" },
+                }
+            },
         };
 
         public static PuppetRigProfile GetProfile(string characterId)
@@ -262,7 +279,7 @@ namespace Mori.ForestSlice
         public OutfitTier CurrentTier { get; private set; } = OutfitTier.Refugee;
         public string ActiveAtlasKey { get; private set; }
 
-        readonly SortingGroup _sortGroup;
+        int _lastBaseOrder = int.MinValue;
         readonly Transform _flipRoot;
         readonly Transform _pelvis;
         readonly Transform _torso;
@@ -289,6 +306,7 @@ namespace Mori.ForestSlice
         readonly SpriteRenderer _slashSr;
         readonly SpriteRenderer _carrySr;
         readonly SpriteRenderer _ringSr;
+        readonly SpriteRenderer _singleBodySr;
 
         AtlasPack _atlas;
         Sprite _headOpenSp;
@@ -322,8 +340,6 @@ namespace Mori.ForestSlice
             rootGo.transform.SetParent(parent, false);
             Root = rootGo.transform;
             Root.localScale = new Vector3(Profile.baseScale, Profile.baseScale, 1f);
-
-            _sortGroup = rootGo.AddComponent<SortingGroup>();
 
             // 脚下光圈（主角常显便于一眼识别直控角色，伙伴可选隐藏或低透明度）
             var ringGo = new GameObject("HeroGroundRing");
@@ -371,7 +387,19 @@ namespace Mori.ForestSlice
             _slashSr.sortingOrder = 13;
             _slashSr.color = new Color(Profile.slashTint.r, Profile.slashTint.g, Profile.slashTint.b, 0f);
 
-            SetSkinTier(OutfitTier.Refugee, autoFallbackToBase: true);
+            if (!string.IsNullOrEmpty(Profile.singleBodySpriteKey))
+            {
+                _pelvis.gameObject.SetActive(false);
+                var sbGo = new GameObject("SingleBodySprite");
+                sbGo.transform.SetParent(_flipRoot, false);
+                _singleBodySr = sbGo.AddComponent<SpriteRenderer>();
+                _singleBodySr.sprite = ForestArt.Get(Profile.singleBodySpriteKey, () => ForestPlaceholderArt.Survivor(4));
+                _singleBodySr.sortingOrder = 6;
+            }
+            else
+            {
+                SetSkinTier(OutfitTier.Refugee, autoFallbackToBase: true);
+            }
         }
 
         static Transform MakeChild(Transform parent, string name, Vector3 localPos)
@@ -397,6 +425,11 @@ namespace Mori.ForestSlice
         public bool SetSkinTier(OutfitTier tier, bool autoFallbackToBase = true)
         {
             CurrentTier = tier;
+            if (_singleBodySr != null)
+            {
+                _singleBodySr.sprite = ForestArt.Get(Profile.singleBodySpriteKey, () => ForestPlaceholderArt.Survivor(4));
+                return true;
+            }
             OutfitTierDef t = Profile.GetTier(tier);
             OutfitTierDef baseDef = Profile.GetTier(OutfitTier.Refugee);
 
@@ -505,13 +538,79 @@ namespace Mori.ForestSlice
         public void SyncWorldPos(Vector3 isoWorldPos, Transform shadowTr, int sortingBias = 2)
         {
             Root.localPosition = isoWorldPos;
-            _sortGroup.sortingOrder = Mathf.RoundToInt(-isoWorldPos.y * 100f) + sortingBias;
+            int b = Mathf.RoundToInt(-isoWorldPos.y * 100f) + sortingBias;
+            if (b != _lastBaseOrder)
+            {
+                _lastBaseOrder = b;
+                if (_ringSr != null) _ringSr.sortingOrder = b;
+                if (_legFarSr != null) _legFarSr.sortingOrder = b + 1;
+                if (_armFarSr != null) _armFarSr.sortingOrder = b + 2;
+                if (_legNearSr != null) _legNearSr.sortingOrder = b + 3;
+                if (_torsoSr != null) _torsoSr.sortingOrder = b + 4;
+                if (_armorChestSr != null) _armorChestSr.sortingOrder = b + 5;
+                if (_singleBodySr != null) _singleBodySr.sortingOrder = b + 5;
+                if (_accSr != null) _accSr.sortingOrder = b + 6;
+                if (_headSr != null) _headSr.sortingOrder = b + 7;
+                if (_headgearSr != null) _headgearSr.sortingOrder = b + 8;
+                if (_toolSr != null) _toolSr.sortingOrder = b + 8;
+                if (_carrySr != null) _carrySr.sortingOrder = b + 9;
+                if (_slashSr != null) _slashSr.sortingOrder = b + 11;
+            }
             if (shadowTr != null) shadowTr.localPosition = isoWorldPos;
         }
 
         // ---------------- 60FPS 骨骼姿态解算 ----------------
         public void Tick(float dt)
         {
+            if (_singleBodySr != null)
+            {
+                _phase += dt;
+                if (_singleBodySr.sprite == null)
+                    _singleBodySr.sprite = ForestArt.Get(Profile.singleBodySpriteKey, () => ForestPlaceholderArt.Survivor(4));
+                Transform sbt = _singleBodySr.transform;
+                if (Mode == HeroAnimMode.Walk || Mode == HeroAnimMode.Run || Mode == HeroAnimMode.CarryRun)
+                {
+                    float w = _phase * (Mode == HeroAnimMode.Walk ? 7.5f : 10.2f);
+                    float bob = Mathf.Abs(Mathf.Sin(w)) * 0.045f;
+                    sbt.localPosition = new Vector3(0f, bob, 0f);
+                    sbt.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(w) * 3.8f);
+                    sbt.localScale = Vector3.one;
+                }
+                else if (Mode == HeroAnimMode.Chop)
+                {
+                    _chopCycle += dt * 1.9f;
+                    if (_chopCycle >= 1f) { _chopCycle -= 1f; _chopHitFiredThisSwing = false; }
+                    if (!_chopHitFiredThisSwing && _chopCycle >= 0.42f)
+                    {
+                        _chopHitFiredThisSwing = true;
+                        _slashAlpha = 0.85f;
+                        OnChopImpact?.Invoke();
+                    }
+                    float recoil = _chopCycle >= 0.42f && _chopCycle <= 0.65f ? -0.05f : 0f;
+                    sbt.localPosition = new Vector3(recoil, 0f, 0f);
+                    sbt.localRotation = Quaternion.Euler(0f, 0f, recoil * -95f);
+                }
+                else if (Mode == HeroAnimMode.Cheer)
+                {
+                    float jb = Mathf.Abs(Mathf.Sin(_phase * 8f)) * 0.09f;
+                    sbt.localPosition = new Vector3(0f, jb, 0f);
+                    sbt.localRotation = Quaternion.identity;
+                }
+                else
+                {
+                    float br = Mathf.Sin(_phase * 2.8f);
+                    sbt.localPosition = Vector3.zero;
+                    sbt.localRotation = Quaternion.identity;
+                    sbt.localScale = new Vector3(1f - br * 0.008f, 1f + br * 0.014f, 1f);
+                }
+                if (_slashAlpha > 0f)
+                {
+                    _slashAlpha = Mathf.Max(0f, _slashAlpha - dt * 5.8f);
+                    _slashSr.color = new Color(Profile.slashTint.r, Profile.slashTint.g, Profile.slashTint.b, _slashAlpha);
+                }
+                return;
+            }
+
             EnsureAtlasAlive();
             _phase += dt;
 

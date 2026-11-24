@@ -6,8 +6,8 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Mori/MoriMain.unity
-    guid: 20b25b87e5cf944fdbcd30e48f7261d5
+    path: Assets/Mori/ForestSlice/ForestSlice.unity
+    guid: 1d00969fa01d141d1b062cc89b3a812a
   m_BuildProfiles: []
   m_configObjects: {}
   m_SlimFeaturesWeixinMiniGame:
@@ -15,7 +15,7 @@ EditorBuildSettings:
     AllocateOverhead: 1
     DecompressASTC: 0
     DecompressDXT: 0
-    DecompressETC: 1
+    DecompressETC: 0
     FreeTypeSfntPng: 1
     LightProbe: 2
     RootMotion: 0

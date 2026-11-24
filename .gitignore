@@ -37,6 +37,7 @@ npm-debug.log*
 # 微信小游戏导出产物与转换 SDK 本地包
 /wechat-minigame/
 /Packages/com.qq.weixin.minigame/
+/TextToolDatas/
 
 # 本地自检截图与临时缓存
 /Screenshots/
