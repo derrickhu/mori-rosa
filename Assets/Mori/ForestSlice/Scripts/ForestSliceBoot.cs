@@ -257,6 +257,7 @@ namespace Mori.ForestSlice
         {
             _autoTest = Application.isEditor && System.IO.File.Exists(AutoTestFlag);
             InitAll(null, startStage, playIntroInStage0: !_autoTest, showBootLoading: !_autoTest);
+            if (!_autoTest) Mori.Analytics.Begin();
             if (_autoTest && startStage == 0)
                 _sim.TriggerIntroDialog();
         }
