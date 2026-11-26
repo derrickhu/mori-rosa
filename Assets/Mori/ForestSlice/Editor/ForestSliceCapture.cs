@@ -1965,11 +1965,11 @@ namespace Mori.ForestSlice.EditorTools
                             cardsOk = false;
                     }
 
-                    bool portraitsUnifiedOk = boot.Sim.FindHero("leimeng")?.portraitKey == "bust_vil_0"
-                        && boot.Sim.FindHero("tieshu")?.portraitKey == "survivor_tieshu"
+                    bool portraitsUnifiedOk = boot.Sim.FindHero("leimeng")?.portraitKey == "bust_leimeng"
+                        && boot.Sim.FindHero("tieshu")?.portraitKey == "bust_tieshu"
                         && bustImgs != null
-                        && bustImgs[2].sprite != null && bustImgs[2].sprite.name.Contains("bust_vil_0")
-                        && bustImgs[4].sprite != null && bustImgs[4].sprite.name.Contains("survivor_tieshu");
+                        && bustImgs[2].sprite != null && bustImgs[2].sprite.name.Contains("bust_leimeng")
+                        && bustImgs[4].sprite != null && bustImgs[4].sprite.name.Contains("bust_tieshu");
 
                     bool ok = Mathf.Abs(padVal - 48f) < 0.1f && bannerOk && cardsOk && portraitsUnifiedOk;
                     if (!ok) allPassed = false;
@@ -2154,6 +2154,350 @@ namespace Mori.ForestSlice.EditorTools
             }
         }
 
+        [MenuItem("末日囤货狂/深山样板/验收《疯狂水世界》9屏商业UI重制", priority = 66)]
+        public static void VerifyWaterWorldUiOverhaul()
+        {
+            const string WwVerifierDir = "/Users/rosa/.gemini/antigravity/brain/ffe3cc49-dd8a-423d-9186-a75d07d9f9ee";
+            AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+            Directory.CreateDirectory(WwVerifierDir);
+            Directory.CreateDirectory(OutDir);
+
+            // 强制重导所有 ww_* 贴图，确保 ForestArtPostprocessor 写入 FullRect + Pivot(0.5,0.5) + WeixinMiniGame ASTC_4x4
+            string[] wwGuids = AssetDatabase.FindAssets("ww_ t:Texture", new[] { "Assets/Mori/ForestSlice/Resources/ForestArt" });
+            var report = new System.Text.StringBuilder();
+            int wwCount = 0;
+            bool wwImportOk = true;
+            for (int i = 0; i < wwGuids.Length; i++)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(wwGuids[i]);
+                string key = Path.GetFileNameWithoutExtension(path);
+                if (!key.StartsWith("ww_")) continue;
+                AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
+                var imp = AssetImporter.GetAtPath(path) as TextureImporter;
+                if (imp == null) continue;
+                wwCount++;
+                var st = new TextureImporterSettings();
+                imp.ReadTextureSettings(st);
+                var ps = imp.GetPlatformTextureSettings("WeixinMiniGame");
+                int expectedMax = key == "ww_hero_cabin_bg" ? 2048 : 512;
+                bool ok = imp.textureType == TextureImporterType.Sprite
+                    && st.spriteMeshType == SpriteMeshType.FullRect
+                    && Vector2.Distance(st.spritePivot, new Vector2(0.5f, 0.5f)) < 0.001f
+                    && ps.overridden
+                    && ps.format == TextureImporterFormat.ASTC_4x4
+                    && ps.maxTextureSize == expectedMax;
+                if (!ok)
+                {
+                    wwImportOk = false;
+                    report.AppendLine($"WW_IMPORT_FAIL: {key} fmt={ps.format} max={ps.maxTextureSize} pivot={st.spritePivot}");
+                }
+            }
+            report.AppendLine($"WW_SPRITES_CHECKED={wwCount} IMPORT_OK={wwImportOk}");
+
+            const System.Reflection.BindingFlags BF = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance;
+            ForestSurvivalHud.EditorTopSafePadOverride = 48f;
+            try
+            {
+                // -----------------------------------------------------------------
+                // 1. ww_01_main_hud_and_bubbles.png
+                // 扩展营地 + 活跃居民头顶纯白无描边图标气泡(have/need) + 左上双排紧凑领主HUD(x<=390) + 左下悬浮任务卡 + 底部6槽石板导航栏
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(2, (boot, cam) =>
+                {
+                    var sim = boot.Sim;
+                    sim.EnsureActiveOrders();
+                    // 让居民需求既有已满足(深色)也有差1件(红色 0/1)展示对比
+                    if (sim.ActiveOrders.Count > 0)
+                    {
+                        var o0 = sim.ActiveOrders[0];
+                        sim.Add(o0.res1, 4, notifyToast: false);
+                        if (o0.amt2 > 0) sim.Add(o0.res2, -999, notifyToast: false);
+                    }
+                    if (sim.ActiveOrders.Count > 1)
+                    {
+                        var o1 = sim.ActiveOrders[1];
+                        sim.Add(o1.res1, 3, notifyToast: false);
+                    }
+                    for (int i = 0; i < 32; i++)
+                    {
+                        sim.Tick(0.05f);
+                        boot.World.Tick(0.05f);
+                        boot.View.Tick(0.05f);
+                        boot.Hud.Tick(0.06f);
+                    }
+                    // 确保开局后台生产飘出的 XP 飞星已完全收束落袋，主画面干净清爽
+                    for (int i = 0; i < 16; i++) boot.Hud.Tick(0.08f);
+                    boot.View.FrameCamera(new Vector2(15.3f, 15.8f), 4.5f);
+                    boot.View.Tick(0.05f);
+                    boot.Hud.Tick(0.05f);
+                }, (boot, _) =>
+                {
+                    CheckTopRightCapsuleClear(boot.Hud, "MainCampHud", report);
+                }, "ww_01_main_hud_and_bubbles.png", WwVerifierDir, OutDir);
+
+                // -----------------------------------------------------------------
+                // 2. ww_02_building_upgrade_modal.png
+                // 对标《疯狂水世界》仓库升级弹窗：左上破框立体建筑插画 + +80 ▶▶ +180 绿字提升 + 满足✔/不足✘ + 蓝钮[前往]/[去生产] + 底部等级提示
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(0, (boot, cam) =>
+                {
+                    var sim = boot.Sim;
+                    sim.CampLevel = 1; // 仓库升2级需领主Lv.2 -> 底部显示红字等级上限提示
+                    sim.Coins = 380;   // 铜币 380/120 ✔
+                    sim.Add(SurvRes.Plank, -999, notifyToast: false);
+                    sim.Add(SurvRes.Plank, 2, notifyToast: false); // 精锯木板 2/8 ✘ [去生产]
+                    // 当前人口 4/6 ✘ [前往]
+                    CampNode wh = sim.Find("warehouse");
+                    boot.View.FrameCamera(new Vector2(17.2f, 17.2f), 4.2f);
+                    boot.Hud.OpenBuildConfirmCard(wh);
+                    boot.Hud.Tick(0.05f);
+                }, null, "ww_02_building_upgrade_modal.png", WwVerifierDir, OutDir);
+
+                // -----------------------------------------------------------------
+                // 3. ww_03_workshop_half_drawer.png
+                // 对标《疯狂水世界》切鱼厂/服装作坊：上半屏实时营地可见 + 悬浮[升 级] + 队列0生产中 + 5×2切角配方格(已解锁&未解锁锁头) + 青绿四角选框 + 原料 have/need
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(2, (boot, cam) =>
+                {
+                    var sim = boot.Sim;
+                    CampNode tailor = sim.Find("tailor");
+                    if (tailor != null)
+                    {
+                        // 先清空后台队列飞星，确保标题栏与上半屏营地干净无遮挡
+                        for (int i = 0; i < 18; i++)
+                        {
+                            sim.Tick(0.08f);
+                            boot.World.Tick(0.05f);
+                            boot.Hud.Tick(0.08f);
+                        }
+                        for (int i = 0; i < 14; i++) boot.Hud.Tick(0.08f);
+                        tailor.level = 2; // Lv.2 解锁前2个配方，第3/4个配方(3级/4级解锁)显示锁头剪影！
+                        tailor.queue.Clear();
+                        sim.Add(SurvRes.Cloth, 12, notifyToast: false);
+                        sim.Add(SurvRes.Pelt, 6, notifyToast: false);
+                        sim.TryEnqueueRecipe(tailor, sim.TailorRecipes[0], out _);
+                        tailor.queue[0].timer = 1.8f; // 队列槽0稳定展示绿色生产进度条与倒计时
+                        // 选中已解锁第2配方(防寒猎皮靴)，同时设铁钉 0/need 展示充足+缺料对比与底部[生 产]按钮！
+                        sim.Add(SurvRes.Nails, -999, notifyToast: false);
+                        boot.View.FrameCamera(new Vector2(tailor.gx, tailor.gy - 1.4f), 4.2f);
+                        boot.Hud.OpenWorkshopDrawer(tailor, selectRecipe: 1);
+                        boot.Hud.Tick(0.05f);
+                    }
+                }, null, "ww_03_workshop_half_drawer.png", WwVerifierDir, OutDir);
+
+                // -----------------------------------------------------------------
+                // 4. ww_04_hero_roster_grid.png
+                // 全屏 3×2 切角品质英雄总览网格：4名已招募彩色英雄 + 2名未招募暗影剪影与招募条件胶囊 + 职业筛选标签 + 底部红返回键+[闯关招募英雄]+[战术布阵]
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(2, (boot, cam) =>
+                {
+                    var sim = boot.Sim;
+                    sim.Coins = 1280;
+                    sim.Add(SurvRes.Ration, 24, notifyToast: false);
+                    sim.Add(SurvRes.HeroMedal, 4, notifyToast: false);
+                    for (int i = 0; i < sim.Heroes.Count; i++)
+                    {
+                        sim.Heroes[i].unlocked = (i < 4); // 前4名彩色解锁，后2名暗影剪影待招募
+                        if (i < 4)
+                        {
+                            sim.Heroes[i].level = 5 + i;
+                            sim.Heroes[i].stars = (i == 0) ? 3 : ((i == 1) ? 2 : 1);
+                        }
+                    }
+                    boot.Hud.OpenHeroModal(1);
+                    boot.Hud.Tick(0.05f);
+                }, (boot, _) =>
+                {
+                    CheckTopRightCapsuleClear(boot.Hud, "HeroAssignModal", report);
+                }, "ww_04_hero_roster_grid.png", WwVerifierDir, OutDir);
+
+                // -----------------------------------------------------------------
+                // 5. ww_05_hero_cabin_detail.png
+                // 对标《疯狂水世界》赏金猎人舱室详情：阳光木质军械舱全幅背景 + 史诗紫绶带 + 已达上限横幅 + 蓝拳头战力徽章 + 5星条 + 2×3斑马纹六维属性表 + 4枚圆章技能/被动 + 底部石板四页签
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(2, (boot, cam) =>
+                {
+                    var sim = boot.Sim;
+                    sim.CampLevel = 8;
+                    sim.Coins = 1650;
+                    sim.Add(SurvRes.Ration, 18, notifyToast: false);
+                    sim.Add(SurvRes.HeroMedal, 3, notifyToast: false);
+                    HeroSpec xt = sim.Heroes[1]; // 小棠（史诗紫）
+                    xt.unlocked = true;
+                    xt.stars = 1; // 展示 1枚点亮主动技圆章 + 3枚 "1星/2星/3星解锁" 被动圆章！
+                    xt.level = sim.MaxHeroLevelCap; // 8/8 满上限，展示 "已达上限，需要提升玩家等级" 横幅！
+                    boot.Hud.OpenHeroDetailModal(1, 0);
+                    boot.Hud.Tick(0.05f);
+                }, (boot, _) =>
+                {
+                    CheckTopRightCapsuleClear(boot.Hud, "HeroDetailModal", report);
+                }, "ww_05_hero_cabin_detail.png", WwVerifierDir, OutDir);
+
+                // -----------------------------------------------------------------
+                // 6. ww_06_hero_delegation_and_picker.png
+                // 对标《疯狂水世界》英雄委任半屏部门抽屉：上半屏实时营地可见 + ww_dept_* 漫画工坊/建造/农牧插画 + 已驻守品质卡 + 空闲[+]槽 + 锁头槽 + 玩家X级解锁 + 底部[一键卸任]/[一键委任]
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(1, (boot, cam) =>
+                {
+                    var sim = boot.Sim;
+                    sim.CampLevel = 4; // 展示已解锁部门卡(已驻守+空槽+锁头槽)与下方 "玩家X级解锁" 部门卡同框！
+                    for (int i = 0; i < sim.Heroes.Count; i++)
+                        sim.Heroes[i].unlocked = (i < 3);
+                    for (int p = 0; p < sim.DelegationPosts.Count; p++)
+                    {
+                        var st = sim.DelegationPosts[p];
+                        for (int s = 0; s < st.assignedHeroIds.Length; s++)
+                            sim.AssignHeroToPostSlot(st.kind, s, null);
+                    }
+                    if (sim.DelegationPosts.Count > 0)
+                        sim.AssignHeroToPostSlot(sim.DelegationPosts[0].kind, 0, sim.Heroes[1].id); // 小棠驻守第1部门槽0，槽1留出 [+] 号！
+                    boot.View.FrameCamera(new Vector2(15.4f, 16.2f), 4.5f);
+                    boot.Hud.OpenHeroModal(0);
+                    boot.Hud.Tick(0.05f);
+                }, null, "ww_06_hero_delegation_and_picker.png", WwVerifierDir, OutDir);
+
+                // -----------------------------------------------------------------
+                // 7. ww_07_resident_needs_drawer.png
+                // 对标《疯狂水世界》居民需求半屏抽屉：上半屏营地居民气泡可见 + 笑脸徽章 + 今日满足需求 5/5 满金条 + 抖动红补给礼袋(!) + 方形居民头像页签无痕融入浅白卡 + 台词 + 星标铜币奖励 + 大图标需求框 + 底部红返回键+[获取物品]
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(2, (boot, cam) =>
+                {
+                    var sim = boot.Sim;
+                    sim.EnsureActiveOrders();
+                    sim.SatisfiedToday = 5; // 激活 5/5 满金条 + 红礼袋红点可领态！
+                    if (sim.ActiveOrders.Count > 0)
+                    {
+                        var o0 = sim.ActiveOrders[0];
+                        sim.Add(o0.res1, 6, notifyToast: false);
+                        if (o0.amt2 > 0)
+                        {
+                            sim.Add(o0.res2, -999, notifyToast: false); // 第2项设为 0/need 红字，展示 [获取物品] 蓝按钮！
+                        }
+                        else
+                        {
+                            o0.res2 = SurvRes.LinenShirt;
+                            o0.amt2 = 1;
+                            sim.Add(SurvRes.LinenShirt, -999, notifyToast: false);
+                        }
+                    }
+                    if (sim.ActiveOrders.Count > 1)
+                    {
+                        var o1 = sim.ActiveOrders[1];
+                        sim.Add(o1.res1, 6, notifyToast: false);
+                        if (o1.amt2 > 0) sim.Add(o1.res2, 6, notifyToast: false); // 第2位居民绿勾可交付！
+                    }
+                    for (int i = 0; i < 16; i++)
+                    {
+                        boot.World.Tick(0.05f);
+                        boot.Hud.Tick(0.05f);
+                    }
+                    boot.View.FrameCamera(new Vector2(15.2f, 16.4f), 4.5f);
+                    boot.Hud.OpenResidentDemandDrawer();
+                    // 切到第0位居民展示已齐+缺货红字对比（第1位居民头像右上同时亮起绿勾！）
+                    var fSelTab = typeof(ForestSurvivalHud).GetField("_wwSelectedOrderTab", BF);
+                    var mRefresh = typeof(ForestSurvivalHud).GetMethod("RefreshResidentDrawer", BF);
+                    fSelTab?.SetValue(boot.Hud, 0);
+                    mRefresh?.Invoke(boot.Hud, null);
+                    boot.View.Tick(0.05f);
+                    boot.Hud.Tick(0.05f);
+                }, null, "ww_07_resident_needs_drawer.png", WwVerifierDir, OutDir);
+
+                // -----------------------------------------------------------------
+                // 8. ww_08_bag_clipped_inventory.png
+                // 对标《疯狂水世界》道具仓库：顶部道具标题(避让胶囊) + WwBrokenFrame双线断墨画框 + 4列多彩切角品质卡 + 青绿四角选框 + 底部固定选中道具详情栏+[前往获取] + 红返回键+4页签石板托盘
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(2, (boot, cam) =>
+                {
+                    var sim = boot.Sim;
+                    sim.Add(SurvRes.Plank, 28, notifyToast: false);
+                    sim.Add(SurvRes.Nails, 16, notifyToast: false);
+                    sim.Add(SurvRes.IronBeam, 9, notifyToast: false);
+                    sim.Add(SurvRes.IronIngot, 12, notifyToast: false);
+                    sim.Add(SurvRes.MetalPipe, 6, notifyToast: false);
+                    sim.Add(SurvRes.Cloth, 22, notifyToast: false);
+                    sim.Add(SurvRes.LinenShirt, 5, notifyToast: false);
+                    sim.Add(SurvRes.LeatherBoots, 4, notifyToast: false);
+                    sim.Add(SurvRes.FurCoat, 3, notifyToast: false);
+                    sim.Add(SurvRes.PlateArmor, 2, notifyToast: false);
+                    sim.Add(SurvRes.SmokedMeat, 14, notifyToast: false);
+                    sim.Add(SurvRes.MedKit, 3, notifyToast: false);
+                    sim.Add(SurvRes.RoastVeggie, 9, notifyToast: false);
+                    sim.Add(SurvRes.VeggieSoup, 7, notifyToast: false);
+                    sim.Add(SurvRes.GrillFish, 5, notifyToast: false);
+                    sim.Add(SurvRes.WarmTea, 6, notifyToast: false);
+                    sim.Add(SurvRes.HerbPoultice, 4, notifyToast: false);
+                    sim.Add(SurvRes.Blueprint, 8, notifyToast: false);
+                    sim.Add(SurvRes.HeroMedal, 5, notifyToast: false);
+                    boot.Hud.OpenBagInventoryModal(0);
+                    boot.Hud.Tick(0.05f);
+                }, (boot, _) =>
+                {
+                    CheckTopRightCapsuleClear(boot.Hud, "BagInventoryModal", report);
+                }, "ww_08_bag_clipped_inventory.png", WwVerifierDir, OutDir);
+
+                // -----------------------------------------------------------------
+                // 9. ww_09_congrats_reward_burst.png
+                // 对标《疯狂水世界》恭喜获得全屏爆奖遮罩：ww_banner_congrats 立体粉紫大字(零重影叠字！) + 旋转放射光 + 4张切角品质奖励卡 + 青绿四角选框 + 下方白底道具说明卡 + 点击空白区域关闭
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(2, (boot, cam) =>
+                {
+                    var sim = boot.Sim;
+                    sim.CampLevel = 7;
+                    sim.SatisfiedToday = 5;
+                    boot.Hud.OpenResidentDemandDrawer();
+                    var mClaim = typeof(ForestSurvivalHud).GetMethod("OnOrderGiftBoxClicked", BF);
+                    mClaim?.Invoke(boot.Hud, null);
+                    // 选中工程手稿卡展示丰富品质色彩与白底详情说明
+                    var mSel = typeof(ForestSurvivalHud).GetMethod("SelectCongratsRewardTile", BF);
+                    mSel?.Invoke(boot.Hud, new object[] { 1 });
+                    boot.Hud.Tick(0.05f);
+                }, null, "ww_09_congrats_reward_burst.png", WwVerifierDir, OutDir);
+            }
+            finally
+            {
+                ForestSurvivalHud.EditorTopSafePadOverride = 0f;
+            }
+
+            // 恢复干净可运行的默认场景
+            EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            var cleanCam = new GameObject("MainCamera", typeof(Camera)) { tag = "MainCamera" };
+            new GameObject("ForestSliceBoot", typeof(ForestSliceBoot));
+            EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene(), ScenePath);
+
+            File.WriteAllText("/tmp/mori_ww_ui_report.txt", report.ToString());
+            Debug.Log("[VerifyWaterWorldUiOverhaul]\n" + report);
+        }
+
+        static void CheckTopRightCapsuleClear(ForestSurvivalHud hud, string rootObjName, System.Text.StringBuilder report)
+        {
+            const System.Reflection.BindingFlags BF = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance;
+            var fCanvasRt = typeof(ForestSurvivalHud).GetField("_canvasRt", BF);
+            var canvasRt = (RectTransform)fCanvasRt?.GetValue(hud);
+            if (canvasRt == null) return;
+            Transform targetRoot = canvasRt.Find(rootObjName);
+            if (targetRoot == null) targetRoot = canvasRt;
+
+            bool clear = true;
+            string offender = "";
+            var graphics = targetRoot.GetComponentsInChildren<UnityEngine.UI.Graphic>(false);
+            for (int i = 0; i < graphics.Length; i++)
+            {
+                var gr = graphics[i];
+                if (!gr.raycastTarget && gr.color.a < 0.05f) continue;
+                if (gr.rectTransform.rect.width >= 700f) continue; // 跳过全屏遮罩或通栏顶底背板本身
+                Bounds b = RectTransformUtility.CalculateRelativeRectTransformBounds(canvasRt, gr.rectTransform);
+                // 720x1280 微信右上胶囊安全禁区：实际胶囊位于 x = 526..700 (localX > +166)；左置顶栏严格限制 x <= 396 (localX <= +36.5)，居中窄铭牌限制 x <= 456 (localX <= +96.5)
+                float maxAllowedLocalX = Mathf.Abs(b.center.x) < 12f ? 96.5f : 36.5f;
+                if (b.max.y > 524.5f && b.max.x > maxAllowedLocalX)
+                {
+                    clear = false;
+                    offender = $"{gr.name}(maxX={b.max.x + 360f:F1},topY={640f - b.max.y:F1})";
+                    break;
+                }
+            }
+            report.AppendLine($"CAPSULE_CHECK[{rootObjName}]: clear={clear} offender={offender}");
+        }
+
         static void CaptureArena720x1280(
             int stage,
             Action<ForestSliceBoot, Camera> setupBeforeRender,
@@ -2230,6 +2574,1444 @@ namespace Mori.ForestSlice.EditorTools
             UnityEngine.Object.DestroyImmediate(tex);
             cam.targetTexture = null;
             UnityEngine.Object.DestroyImmediate(rt);
+        }
+
+        // =====================================================================
+        // Living-World & Full 9-Part Skeletal Hero Unification Verification
+        // =====================================================================
+        public static void VerifyLivingWorldAndRigs()
+        {
+            const string OwnBrainDir = "/Users/rosa/.gemini/antigravity/brain/21562628-a212-42f6-94cf-eece5bf07b7a";
+            const string CoordBrainDir = "/Users/rosa/.gemini/antigravity/brain/1b3cbc05-17b2-44a9-ba22-41684be97e65";
+            Directory.CreateDirectory(OwnBrainDir);
+            Directory.CreateDirectory(CoordBrainDir);
+            Directory.CreateDirectory(OutDir);
+
+            AssetDatabase.Refresh();
+            var report = new System.Text.StringBuilder();
+            bool allPassed = true;
+
+            const System.Reflection.BindingFlags BF = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance;
+
+            // -----------------------------------------------------------------
+            // A. Programmatic Assertions: 6 Skeletal Hero Atlases + Portraits + 16 Flipbook Strips
+            // -----------------------------------------------------------------
+            {
+                EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+                var tmpRoot = new GameObject("VerifyRigRoot").transform;
+                string[] heroIds = { "dachui", "xiaotang", "leimeng", "linyan", "tieshu", "laochentou" };
+                string[] expectedAtlases =
+                {
+                    "dachui_puppet_atlas", "xiaotang_puppet_atlas", "leimeng_puppet_atlas",
+                    "linyan_puppet_atlas", "tieshu_puppet_atlas", "laochentou_puppet_atlas"
+                };
+                string[] expectedBusts =
+                {
+                    "bust_dachui", "bust_xiaotang", "bust_leimeng",
+                    "bust_linyan", "bust_tieshu", "bust_laochentou"
+                };
+
+                for (int i = 0; i < heroIds.Length; i++)
+                {
+                    string cid = heroIds[i];
+                    PuppetRigProfile prof = PuppetRegistry.GetProfile(cid);
+                    OutfitTierDef baseDef = prof.GetTier(OutfitTier.Refugee);
+                    Texture2D atlasTex = Resources.Load<Texture2D>("ForestArt/" + expectedAtlases[i]);
+                    Texture2D bustTex = Resources.Load<Texture2D>("ForestArt/" + expectedBusts[i]);
+                    Sprite bustSp = ForestComicUiSkin.GetArt(expectedBusts[i]);
+
+                    var puppet = new ForestHeroPuppet(tmpRoot, prof, "Verify_" + cid);
+                    puppet.SetSkinTier(OutfitTier.Refugee, autoFallbackToBase: true);
+
+                    bool singleBodyEmpty = string.IsNullOrEmpty(prof.singleBodySpriteKey);
+                    bool atlasValid = atlasTex != null && atlasTex.width == 1024 && atlasTex.height == 1024 && puppet.ActiveAtlasKey == expectedAtlases[i];
+                    bool bustValid = bustTex != null && bustSp != null;
+                    bool heroOk = singleBodyEmpty && atlasValid && bustValid && baseDef != null && baseDef.bustKey == expectedBusts[i];
+                    if (!heroOk) allPassed = false;
+                    report.AppendLine($"HERO_RIG[{cid}]: singleBodyEmpty={singleBodyEmpty} activeAtlas={puppet.ActiveAtlasKey} tex={(atlasTex != null ? $"{atlasTex.width}x{atlasTex.height}" : "null")} bust={expectedBusts[i]}({(bustTex != null ? $"{bustTex.width}x{bustTex.height}" : "null")}) ok={heroOk}");
+                }
+                UnityEngine.Object.DestroyImmediate(tmpRoot.gameObject);
+
+                (string key, int frames, float ppu, FlipbookPlayMode mode)[] strips =
+                {
+                    ("anim_walker_0", 4, 256f, FlipbookPlayMode.LoopAll),
+                    ("anim_walker_1", 4, 256f, FlipbookPlayMode.LoopAll),
+                    ("anim_walker_2", 4, 256f, FlipbookPlayMode.LoopAll),
+                    ("anim_work_fishing", 3, 256f, FlipbookPlayMode.PingPongAll),
+                    ("anim_work_cooking", 3, 256f, FlipbookPlayMode.PingPongAll),
+                    ("anim_work_farming", 3, 256f, FlipbookPlayMode.PingPongAll),
+                    ("anim_work_sawing", 3, 256f, FlipbookPlayMode.PingPongAll),
+                    ("anim_work_forging", 3, 256f, FlipbookPlayMode.PingPongAll),
+                    ("anim_work_herbs", 3, 256f, FlipbookPlayMode.PingPongAll),
+                    ("anim_zom_shambler", 4, 256f, FlipbookPlayMode.SplitMoveAttack),
+                    ("anim_zom_armored", 4, 256f, FlipbookPlayMode.SplitMoveAttack),
+                    ("anim_zom_runner", 4, 256f, FlipbookPlayMode.SplitMoveAttack),
+                    ("anim_zom_boss", 4, 384f, FlipbookPlayMode.SplitMoveAttack),
+                    ("anim_rabbit", 3, 256f, FlipbookPlayMode.PingPongAll),
+                    ("anim_boar", 3, 256f, FlipbookPlayMode.PingPongAll),
+                    ("anim_deer", 3, 256f, FlipbookPlayMode.PingPongAll),
+                };
+
+                for (int i = 0; i < strips.Length; i++)
+                {
+                    var s = strips[i];
+                    Sprite[] arr = ForestSpriteFlipbook.LoadStripFrames(s.key, s.frames, s.ppu, 0.08f);
+                    var fb = new ForestSpriteFlipbook(s.key, s.frames, s.mode, fps: 6f, fallbackSprite: null, ppu: s.ppu, pivotY: 0.08f, phaseOffset: 0f);
+                    Sprite f0 = fb.Sample(0f, moving: true, attacking: false);
+                    Sprite f1 = fb.Sample(0.25f, moving: true, attacking: false);
+                    bool nonNullAll = arr != null && arr.Length == s.frames;
+                    if (nonNullAll)
+                    {
+                        for (int k = 0; k < arr.Length; k++)
+                            if (arr[k] == null) nonNullAll = false;
+                    }
+                    bool frameChanged = f0 != null && f1 != null && f0 != f1;
+                    bool stripOk = nonNullAll && fb.IsLoaded && frameChanged;
+                    if (!stripOk) allPassed = false;
+                    report.AppendLine($"STRIP[{s.key}]: frames={(arr != null ? arr.Length : 0)}/{s.frames} f0={f0?.name} f1={f1?.name} changed={frameChanged} ok={stripOk}");
+                }
+            }
+
+            ForestSurvivalHud.EditorTopSafePadOverride = 48f;
+            try
+            {
+                // -----------------------------------------------------------------
+                // 1. live_01_unified_hero_roster.png
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(2, (boot, cam) =>
+                {
+                    boot.Sim.GmUnlockAllHeroesAndFormations();
+                    var mClearToast = typeof(ForestSurvivalHud).GetMethod("ClearFloatingWorldToasts", BF);
+                    mClearToast?.Invoke(boot.Hud, null);
+                    boot.Hud.OpenHeroModal(1);
+                    boot.Hud.Tick(0.05f);
+                }, (boot, _) =>
+                {
+                    var fBusts = typeof(ForestSurvivalHud).GetField("_haBusts", BF);
+                    var bustImgs = (UnityEngine.UI.Image[])fBusts?.GetValue(boot.Hud);
+                    string[] exp = { "bust_dachui", "bust_xiaotang", "bust_leimeng", "bust_linyan", "bust_tieshu", "bust_laochentou" };
+                    bool rosterOk = bustImgs != null && bustImgs.Length == 6;
+                    for (int i = 0; i < 6 && rosterOk; i++)
+                    {
+                        if (bustImgs[i].sprite == null || !bustImgs[i].sprite.name.Contains(exp[i]))
+                            rosterOk = false;
+                    }
+                    if (!rosterOk) allPassed = false;
+                    report.AppendLine($"LIVE_01_ROSTER: rosterOk={rosterOk} lm={bustImgs?[2]?.sprite?.name} ts={bustImgs?[4]?.sprite?.name}");
+                }, "live_01_unified_hero_roster.png", OwnBrainDir, CoordBrainDir, OutDir);
+
+                // -----------------------------------------------------------------
+                // 2. live_02_tieshu_cabin_detail.png
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(2, (boot, cam) =>
+                {
+                    boot.Sim.GmUnlockAllHeroesAndFormations();
+                    var mClearToast = typeof(ForestSurvivalHud).GetMethod("ClearFloatingWorldToasts", BF);
+                    mClearToast?.Invoke(boot.Hud, null);
+                    boot.Hud.OpenHeroDetailModal(4, 0);
+                    boot.Hud.Tick(0.05f);
+                }, (boot, _) =>
+                {
+                    var fCabin = typeof(ForestSurvivalHud).GetField("_wwHdCabinPortrait", BF);
+                    var img = (UnityEngine.UI.Image)fCabin?.GetValue(boot.Hud);
+                    bool cabinOk = img != null && img.sprite != null && img.sprite.name.Contains("bust_tieshu");
+                    if (!cabinOk) allPassed = false;
+                    report.AppendLine($"LIVE_02_CABIN: cabinSprite={img?.sprite?.name} ok={cabinOk}");
+                }, "live_02_tieshu_cabin_detail.png", OwnBrainDir, CoordBrainDir, OutDir);
+
+                // -----------------------------------------------------------------
+                // 3. live_03_camp_artisans_and_ranch.png
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(2, (boot, cam) =>
+                {
+                    boot.View.Map.ClearRectInstant(3, 9, 30, 25);
+                    boot.View.Map.RebuildMask();
+                    boot.View.RefreshEdges(instant: true);
+
+                    // Hide ready-to-collect star badge on Ranch so all 3 ranch pen critters are 100% unobstructed
+                    for (int p = 0; p < boot.Sim.RanchPens.Count; p++)
+                    {
+                        boot.Sim.RanchPens[p].readyToCollect = false;
+                        boot.Sim.RanchPens[p].feeding = true;
+                        boot.Sim.RanchPens[p].timer = 5.0f;
+                    }
+                    boot.World.RefreshNodeVisual(boot.Sim.Find("beast_ranch"));
+                    boot.World.RefreshNodeVisual(boot.Sim.Find("farm_a"));
+
+                    boot.Sim.GmUnlockAllHeroesAndFormations();
+                    // Tick camp so stationed workers, ranch animals, road walkers & skeletal companion heroes animate mid-stride
+                    for (int i = 0; i < 24; i++)
+                    {
+                        boot.Sim.Tick(0.05f);
+                        boot.World.Tick(0.05f);
+                        boot.View.Tick(0.05f);
+                        boot.Hud.Tick(0.05f);
+                    }
+
+                    // Ensure skeletal Leimeng & Tieshu are briskly walking in the central camp plaza between Farm, Ranch, Shelter & Sawmill
+                    for (int i = 1; i < boot.World.Walkers.Count; i++)
+                    {
+                        var w = boot.World.Walkers[i];
+                        if (w.heroId == "leimeng")
+                        {
+                            w.gx = 15.0f; w.gy = 15.8f;
+                            w.patrolA = new Vector2(14.2f, 15.4f);
+                            w.patrolB = new Vector2(16.4f, 16.4f);
+                            w.targetGx = 16.4f; w.targetGy = 16.4f;
+                            w.pauseTimer = 0f;
+                            w.puppet?.SetFacing(true);
+                            w.puppet?.SetMode(HeroAnimMode.Run);
+                            w.puppet?.SyncWorldPos(ForestSliceView.Iso(w.gx, w.gy), w.shadowTr);
+                            w.puppet?.Tick(0.18f);
+                        }
+                        else if (w.heroId == "tieshu")
+                        {
+                            w.gx = 19.2f; w.gy = 15.6f;
+                            w.patrolA = new Vector2(20.0f, 16.0f);
+                            w.patrolB = new Vector2(17.8f, 15.0f);
+                            w.targetGx = 17.8f; w.targetGy = 15.0f;
+                            w.pauseTimer = 0f;
+                            w.puppet?.SetFacing(false);
+                            w.puppet?.SetMode(HeroAnimMode.Run);
+                            w.puppet?.SyncWorldPos(ForestSliceView.Iso(w.gx, w.gy), w.shadowTr);
+                            w.puppet?.Tick(0.22f);
+                        }
+                    }
+
+                    for (int i = 0; i < boot.World.CivilianVillagers.Count; i++)
+                        boot.World.CivilianVillagers[i].pauseTimer = 0f;
+
+                    boot.World.Tick(0.08f);
+                    boot.View.Tick(0.08f);
+
+                    var mClearToast = typeof(ForestSurvivalHud).GetMethod("ClearFloatingWorldToasts", BF);
+                    mClearToast?.Invoke(boot.Hud, null);
+                    var fBanner = typeof(ForestSurvivalHud).GetField("_centerBannerGo", BF);
+                    ((GameObject)fBanner?.GetValue(boot.Hud))?.SetActive(false);
+
+                    // Frame Kitchen + Ranch + Farm + Road Walkers + Leimeng/Tieshu + Sawmill + Smithy cleanly
+                    boot.View.FrameCamera(new Vector2(16.9f, 15.0f), 9.4f);
+                    boot.Hud.Tick(0.02f);
+                }, (boot, _) =>
+                {
+                    bool workersOk = boot.World.StationedWorkers.ContainsKey("sawmill")
+                                     && boot.World.StationedWorkers.ContainsKey("kitchen")
+                                     && boot.World.StationedWorkers.ContainsKey("farm_a")
+                                     && boot.World.StationedWorkers.ContainsKey("smithy")
+                                     && boot.World.RanchPenAnimals.Count >= 3
+                                     && boot.World.CivilianVillagers.Count >= 3;
+                    if (!workersOk) allPassed = false;
+                    report.AppendLine($"LIVE_03_CAMP: stationed={boot.World.StationedWorkers.Count} ranchAnimals={boot.World.RanchPenAnimals.Count} roadWalkers={boot.World.CivilianVillagers.Count} companionWalkers={boot.World.Walkers.Count - 1} ok={workersOk}");
+                }, "live_03_camp_artisans_and_ranch.png", OwnBrainDir, CoordBrainDir, OutDir);
+
+                // -----------------------------------------------------------------
+                // 4. live_04_river_fishing_and_wildlife.png
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(1, (boot, cam) =>
+                {
+                    // Clear riverbanks so the blue creek in front of RiverDock is 100% open & unobstructed, flanked by pine edges
+                    boot.View.Map.ClearRectInstant(5, 1, 21, 14);
+                    boot.View.Map.RebuildMask();
+                    boot.View.RefreshEdges(instant: true);
+
+                    CampNode dock = boot.Sim.Find("river_dock");
+                    if (dock != null)
+                    {
+                        dock.state = NodeState.Active;
+                        dock.level = 1;
+                        dock.siteUncovered = true;
+                        dock.siteSalvageCleared = true;
+                        boot.World.RefreshNodeVisual(dock);
+                    }
+
+                    // Ensure we have both a wild deer and a wild boar patrolling along the creekside meadow
+                    for (int k = 0; k < 4; k++)
+                        boot.World.SpawnWildPrey();
+                    Vector2[] spots = { new Vector2(11.1f, 6.2f), new Vector2(15.6f, 6.1f) };
+                    int preyIdx = 0;
+                    for (int i = 0; i < boot.World.WildActors.Count; i++)
+                    {
+                        var wa = boot.World.WildActors[i];
+                        if (wa.isZombie || preyIdx >= 2)
+                        {
+                            if (wa.tr != null) wa.tr.gameObject.SetActive(false);
+                            if (wa.shadowTr != null) wa.shadowTr.gameObject.SetActive(false);
+                            continue;
+                        }
+                        // Guarantee 1 deer (anim_deer) + 1 boar (anim_boar)
+                        bool wantDeer = preyIdx == 0;
+                        wa.flipbook = new ForestSpriteFlipbook(
+                            wantDeer ? "anim_deer" : "anim_boar",
+                            frameCount: 3,
+                            mode: FlipbookPlayMode.PingPongAll,
+                            fps: 5.5f,
+                            fallbackSprite: null,
+                            ppu: 256f,
+                            pivotY: 0.08f,
+                            phaseOffset: preyIdx * 0.7f);
+                        wa.baseScale = wantDeer ? 0.92f : 0.88f;
+                        Vector2 sp = spots[preyIdx];
+                        wa.anchorGrid = sp;
+                        wa.gx = sp.x;
+                        wa.gy = sp.y;
+                        wa.grazePauseTimer = 0f;
+                        wa.patrolOffset = 0f;
+                        wa.patrolTargetOffset = preyIdx == 0 ? 0.45f : -0.45f;
+                        preyIdx++;
+                    }
+
+                    for (int i = 0; i < 18; i++)
+                    {
+                        boot.Sim.Tick(0.05f);
+                        boot.World.Tick(0.05f);
+                        boot.View.Tick(0.05f);
+                        boot.Hud.Tick(0.05f);
+                    }
+
+                    var mClearToast = typeof(ForestSurvivalHud).GetMethod("ClearFloatingWorldToasts", BF);
+                    mClearToast?.Invoke(boot.Hud, null);
+                    var fBanner = typeof(ForestSurvivalHud).GetField("_centerBannerGo", BF);
+                    ((GameObject)fBanner?.GetValue(boot.Hud))?.SetActive(false);
+
+                    boot.View.FrameCamera(new Vector2(13.3f, 5.1f), 4.0f);
+                    boot.Hud.Tick(0.02f);
+                }, (boot, _) =>
+                {
+                    bool dockWorkerOk = boot.World.StationedWorkers.TryGetValue("river_dock", out var dw)
+                                        && dw.go != null && dw.go.activeInHierarchy;
+                    if (!dockWorkerOk) allPassed = false;
+                    report.AppendLine($"LIVE_04_RIVER_FISHING: dockWorkerActive={dockWorkerOk}");
+                }, "live_04_river_fishing_and_wildlife.png", OwnBrainDir, CoordBrainDir, OutDir);
+
+                // -----------------------------------------------------------------
+                // 5 & 6. live_05_skeletal_heroes_and_zombies_f1.png (t = 2.60s)
+                //      & live_06_skeletal_heroes_and_zombies_f2.png (t = 2.95s, +0.35s)
+                // -----------------------------------------------------------------
+                {
+                    EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+                    var cam = new GameObject("MainCamera", typeof(Camera)).GetComponent<Camera>();
+                    cam.tag = "MainCamera";
+                    var rt = new RenderTexture(720, 1280, 24, RenderTextureFormat.ARGB32) { antiAliasing = 4 };
+                    cam.targetTexture = rt;
+                    cam.aspect = 720f / 1280f;
+
+                    var boot = new GameObject("ForestSliceBoot").AddComponent<ForestSliceBoot>();
+                    boot.InitAll(cam, 1, playIntroInStage0: false);
+                    boot.Sim.GmUnlockAllHeroesAndFormations();
+                    for (int i = 0; i < boot.Sim.Heroes.Count; i++)
+                    {
+                        boot.Sim.Heroes[i].level = 2;
+                        boot.Sim.Heroes[i].stars = 1;
+                        boot.Sim.Heroes[i].skinTier = OutfitTier.Refugee;
+                        boot.Sim.Heroes[i].portraitKey = PuppetRegistry.ResolveBustKey(boot.Sim.Heroes[i].characterId, OutfitTier.Refugee);
+                    }
+
+                    // Deploy 5 heroes cleanly separated across all 3 lanes:
+                    // Row 0 (Top): 林砚(Back), 雷猛(Front) -> crimson fire-axe cleaving unobstructed!
+                    // Row 1 (Mid): 铁叔(Mid) -> blue-taped shotgun aiming/blasting center-stage!
+                    // Row 2 (Bot): 小棠(Back), 大锤(Front) -> heavy riot tanking bottom lane!
+                    for (int s = 0; s < 9; s++) boot.Sim.FormationSlots[s] = -1;
+                    boot.Sim.TryPlaceHeroInFormation(2, 0 * 3 + 2, out _); // 雷猛 Front-Top
+                    boot.Sim.TryPlaceHeroInFormation(4, 1 * 3 + 1, out _); // 铁叔 Mid-Center
+                    boot.Sim.TryPlaceHeroInFormation(0, 2 * 3 + 2, out _); // 大锤 Front-Bottom
+                    boot.Sim.TryPlaceHeroInFormation(3, 0 * 3 + 0, out _); // 林砚 Back-Top
+                    boot.Sim.TryPlaceHeroInFormation(1, 2 * 3 + 0, out _); // 小棠 Back-Bottom
+
+                    boot.Sim.GmSetBattleStage(10); // Boss stage (recPower 2280): Shambler + HardhatArmored + FastRunner + GiantBoss all alive & clashing!
+                    boot.Hud.StartWaveDefenseBattle();
+                    boot.World.WaveAutoUlt = false; // Keep bridge clear of giant ult fire pools so skeletal limbs & zombie frames are crystal clear!
+
+                    // Step exactly 52 * 0.05s = 2.60s for live_05
+                    for (int step = 0; step < 52; step++)
+                    {
+                        boot.Sim.Tick(0.05f);
+                        boot.World.Tick(0.05f);
+                        boot.View.Tick(0.05f);
+                        boot.Hud.Tick(0.05f);
+                    }
+                    Canvas.ForceUpdateCanvases();
+                    cam.Render();
+
+                    string SnapshotArenaState(out int aliveEnemyCount, out bool bossVisible)
+                    {
+                        var arena = boot.World.Arena;
+                        var fHeroes = typeof(ForestTacticalArena).GetField("_heroes", BF);
+                        var fEnemies = typeof(ForestTacticalArena).GetField("_aliveEnemies", BF);
+                        var fArmNear = typeof(ForestHeroPuppet).GetField("_armNear", BF);
+                        var heroUnits = (System.Collections.IList)fHeroes.GetValue(arena);
+                        var enemyUnits = (System.Collections.IList)fEnemies.GetValue(arena);
+
+                        var sb = new System.Text.StringBuilder();
+                        for (int i = 0; i < heroUnits.Count; i++)
+                        {
+                            object hu = heroUnits[i];
+                            string hid = (string)hu.GetType().GetField("heroId").GetValue(hu);
+                            var pup = (ForestHeroPuppet)hu.GetType().GetField("puppet").GetValue(hu);
+                            var armTr = pup != null ? (Transform)fArmNear?.GetValue(pup) : null;
+                            float zRot = armTr != null ? armTr.localEulerAngles.z : 0f;
+                            sb.Append($"{hid}(atlas={pup?.ActiveAtlasKey},armZ={zRot:F1}) ");
+                        }
+                        aliveEnemyCount = 0;
+                        bossVisible = false;
+                        for (int i = 0; i < enemyUnits.Count; i++)
+                        {
+                            object eu = enemyUnits[i];
+                            if (!(bool)eu.GetType().GetField("alive").GetValue(eu)) continue;
+                            aliveEnemyCount++;
+                            string kindName = eu.GetType().GetField("kind").GetValue(eu).ToString();
+                            Vector2 pos = (Vector2)eu.GetType().GetField("pos").GetValue(eu);
+                            var sr = (SpriteRenderer)eu.GetType().GetField("sr").GetValue(eu);
+                            if (kindName == "GiantBoss" && pos.x <= 2.45f) bossVisible = true;
+                            sb.Append($"{kindName}(x={pos.x:F2},sp={sr?.sprite?.name},flipX={sr?.flipX}) ");
+                        }
+                        return sb.ToString();
+                    }
+
+                    string stateF1 = SnapshotArenaState(out int eCnt1, out bool bossVis1);
+
+                    var prev = RenderTexture.active;
+                    RenderTexture.active = rt;
+                    var tex1 = new Texture2D(rt.width, rt.height, TextureFormat.RGBA32, false);
+                    tex1.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
+                    tex1.Apply();
+                    RenderTexture.active = prev;
+                    byte[] png1 = tex1.EncodeToPNG();
+                    File.WriteAllBytes(Path.Combine(OwnBrainDir, "live_05_skeletal_heroes_and_zombies_f1.png"), png1);
+                    File.WriteAllBytes(Path.Combine(CoordBrainDir, "live_05_skeletal_heroes_and_zombies_f1.png"), png1);
+                    File.WriteAllBytes(Path.Combine(OutDir, "live_05_skeletal_heroes_and_zombies_f1.png"), png1);
+                    UnityEngine.Object.DestroyImmediate(tex1);
+
+                    // Step +0.35s (7 * 0.05s -> t = 2.95s) for live_06
+                    for (int step = 0; step < 7; step++)
+                    {
+                        boot.Sim.Tick(0.05f);
+                        boot.World.Tick(0.05f);
+                        boot.View.Tick(0.05f);
+                        boot.Hud.Tick(0.05f);
+                    }
+                    Canvas.ForceUpdateCanvases();
+                    cam.Render();
+
+                    string stateF2 = SnapshotArenaState(out int eCnt2, out bool bossVis2);
+
+                    RenderTexture.active = rt;
+                    var tex2 = new Texture2D(rt.width, rt.height, TextureFormat.RGBA32, false);
+                    tex2.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
+                    tex2.Apply();
+                    RenderTexture.active = prev;
+                    byte[] png2 = tex2.EncodeToPNG();
+                    File.WriteAllBytes(Path.Combine(OwnBrainDir, "live_06_skeletal_heroes_and_zombies_f2.png"), png2);
+                    File.WriteAllBytes(Path.Combine(CoordBrainDir, "live_06_skeletal_heroes_and_zombies_f2.png"), png2);
+                    File.WriteAllBytes(Path.Combine(OutDir, "live_06_skeletal_heroes_and_zombies_f2.png"), png2);
+                    UnityEngine.Object.DestroyImmediate(tex2);
+
+                    cam.targetTexture = null;
+                    UnityEngine.Object.DestroyImmediate(rt);
+
+                    bool arenaOk = eCnt1 >= 3 && eCnt2 >= 3 && bossVis1 && bossVis2 && stateF1 != stateF2;
+                    if (!arenaOk) allPassed = false;
+                    report.AppendLine($"LIVE_05_ARENA_F1(t={boot.World.Arena.ElapsedBattleSec - 0.35f:F2}s): enemies={eCnt1} bossVis={bossVis1} -> {stateF1}");
+                    report.AppendLine($"LIVE_06_ARENA_F2(t={boot.World.Arena.ElapsedBattleSec:F2}s): enemies={eCnt2} bossVis={bossVis2} -> {stateF2}");
+                    report.AppendLine($"ARENA_MULTI_FRAME_DIFF_OK={arenaOk}");
+                }
+            }
+            finally
+            {
+                ForestSurvivalHud.EditorTopSafePadOverride = 0f;
+            }
+
+            // Restore clean runnable scene
+            EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            new GameObject("MainCamera", typeof(Camera)) { tag = "MainCamera" };
+            new GameObject("ForestSliceBoot", typeof(ForestSliceBoot));
+            EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene(), ScenePath);
+
+            report.AppendLine($"ALL_LIVING_WORLD_VERIFICATIONS_PASSED={allPassed}");
+            File.WriteAllText("/tmp/mori_living_verify_report.txt", report.ToString());
+            Debug.Log("[VerifyLivingWorldAndRigs]\n" + report);
+            if (!allPassed)
+                EditorApplication.Exit(1);
+        }
+
+        // =====================================================================
+        // Hero Economy, 5x5 Star-Petals, 4-Skill Books, Badges, Gear, Chalkboard Formation,
+        // Radio Gacha, Patrol Chest & 4-Tab Bag — Full Audit & 8 Benchmark 720x1280 Captures
+        // =====================================================================
+        public static void VerifyHeroEconomyAndSystems()
+        {
+            const string OwnBrainDir = "/Users/rosa/.gemini/antigravity/brain/a6d7c4f2-6b0c-48c4-a14d-a196878be7f4";
+            const string CoordBrainDir = "/Users/rosa/.gemini/antigravity/brain/1b3cbc05-17b2-44a9-ba22-41684be97e65";
+            Directory.CreateDirectory(OwnBrainDir);
+            Directory.CreateDirectory(CoordBrainDir);
+            Directory.CreateDirectory(OutDir);
+
+            AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+            var report = new System.Text.StringBuilder();
+            bool allPassed = true;
+
+            const System.Reflection.BindingFlags BF =
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance;
+
+            // -----------------------------------------------------------------
+            // A. Audit all 33 new Hero Economy ico_*.png sprites & WeixinMiniGame ASTC_4x4 import
+            // -----------------------------------------------------------------
+            string[] econSpriteKeys =
+            {
+                "ico_shard_dachui", "ico_shard_xiaotang", "ico_shard_leimeng",
+                "ico_shard_linyan", "ico_shard_tieshu", "ico_shard_laochentou",
+                "ico_hero_exp", "ico_recruit_card", "ico_skill_book_1", "ico_skill_book_2",
+                "ico_shard_univ_epic", "ico_shard_univ_leg", "ico_choice_crate",
+                "ico_speed_hourglass", "ico_patrol_chest",
+                "ico_faction_iron", "ico_faction_forest", "ico_faction_tech",
+                "ico_badge_energy", "ico_badge_thorn", "ico_badge_eagle",
+                "ico_badge_pyro", "ico_badge_berserk", "ico_badge_medic",
+                "ico_gear_weapon", "ico_gear_armor", "ico_gear_boots", "ico_gear_goggles",
+                "ico_fmt_default", "ico_fmt_spear", "ico_fmt_resist", "ico_fmt_bastion", "ico_fmt_energy"
+            };
+
+            int okSprites = 0;
+            for (int i = 0; i < econSpriteKeys.Length; i++)
+            {
+                string key = econSpriteKeys[i];
+                string assetPath = "Assets/Mori/ForestSlice/Resources/ForestArt/" + key + ".png";
+                var imp = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+                if (imp != null)
+                {
+                    var wxPs = imp.GetPlatformTextureSettings("WeixinMiniGame");
+                    if (imp.textureType != TextureImporterType.Sprite || !wxPs.overridden || wxPs.format != TextureImporterFormat.ASTC_4x4)
+                    {
+                        imp.textureType = TextureImporterType.Sprite;
+                        imp.spriteImportMode = SpriteImportMode.Single;
+                        imp.alphaIsTransparency = true;
+                        wxPs.overridden = true;
+                        wxPs.maxTextureSize = 512;
+                        wxPs.format = TextureImporterFormat.ASTC_4x4;
+                        wxPs.compressionQuality = 50;
+                        wxPs.crunchedCompression = false;
+                        wxPs.textureCompression = TextureImporterCompression.Compressed;
+                        imp.SetPlatformTextureSettings(wxPs);
+                        imp.SaveAndReimport();
+                    }
+                }
+
+                Sprite sp = Resources.Load<Sprite>("ForestArt/" + key);
+                var impCheck = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+                var psCheck = impCheck != null ? impCheck.GetPlatformTextureSettings("WeixinMiniGame") : null;
+                bool valid = sp != null && impCheck != null
+                             && impCheck.textureType == TextureImporterType.Sprite
+                             && psCheck != null && psCheck.overridden
+                             && psCheck.format == TextureImporterFormat.ASTC_4x4;
+                if (valid) okSprites++;
+                else
+                {
+                    allPassed = false;
+                    report.AppendLine($"FAIL_SPRITE[{key}]: sp={(sp != null)} type={impCheck?.textureType} wxFmt={psCheck?.format}");
+                }
+            }
+            report.AppendLine($"ECON_SPRITES_VERIFIED={okSprites}/{econSpriteKeys.Length}");
+
+            // -----------------------------------------------------------------
+            // B. Functional Economy Smoke Assertions (Lossless Reset, Star-Petals, Gacha, Patrol, ChoiceBox)
+            // -----------------------------------------------------------------
+            {
+                EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+                var tmpCam = new GameObject("TmpCam", typeof(Camera)).GetComponent<Camera>();
+                tmpCam.tag = "MainCamera";
+                var tmpBoot = new GameObject("TmpBoot").AddComponent<ForestSliceBoot>();
+                tmpBoot.InitAll(tmpCam, 1, playIntroInStage0: false);
+                var sim = tmpBoot.Sim;
+                sim.CampLevel = 5;
+                int coinsBefore = sim.Coins;
+                int rationBefore = sim.Get(SurvRes.Ration);
+                sim.Add(SurvRes.HeroExp, 5000);
+                sim.Add(SurvRes.SkillBook, 40);
+                var h0 = sim.Heroes[0];
+                h0.star = 2;
+                h0.skillLevels[1] = 1;
+                h0.skillLevels[2] = 1;
+
+                int expStart = sim.Get(SurvRes.HeroExp);
+                int booksStart = sim.Get(SurvRes.SkillBook);
+                bool lvOk = sim.TryLevelUpHeroWithExp(0, out _) && sim.TryLevelUpHeroWithExp(0, out _);
+                bool skOk = sim.TryUpgradeHeroSkill(0, 0, out _);
+                bool noCampDrain = sim.Coins == coinsBefore && sim.Get(SurvRes.Ration) == rationBefore;
+                bool resetOk = sim.TryResetHeroLevel(0, out _)
+                               && h0.level == 1
+                               && sim.Get(SurvRes.HeroExp) == expStart
+                               && sim.Get(SurvRes.SkillBook) == booksStart;
+
+                sim.Add(SurvRes.RecruitTicket, 10);
+                var pulls = sim.PerformRadioRecruit(10, out _);
+                bool gachaOk = pulls != null && pulls.Count == 10;
+
+                sim.PatrolAccumSec = 3600f;
+                bool patrolOk = sim.TryClaimPatrolChest(out int pExp, out int pCoins, out _, out _) && pExp > 0 && pCoins > 0;
+
+                int woodBefore = sim.Get(SurvRes.Wood);
+                bool boxOk = sim.TryOpenChoiceResBox(SurvRes.Wood, 1, out _) && sim.Get(SurvRes.Wood) == woodBefore + 5;
+
+                bool logicPassed = lvOk && skOk && noCampDrain && resetOk && gachaOk && patrolOk && boxOk;
+                if (!logicPassed) allPassed = false;
+                report.AppendLine($"ECON_LOGIC_SMOKE: lv={lvOk} sk={skOk} dualTrack={noCampDrain} losslessReset={resetOk} gacha10={gachaOk} patrol={patrolOk} choiceBox={boxOk}");
+            }
+
+            static void ClearOverlays(ForestSliceBoot boot, System.Reflection.BindingFlags flags)
+            {
+                boot.Hud.Tick(0.02f);
+                var mClearToast = typeof(ForestSurvivalHud).GetMethod("ClearFloatingWorldToasts", flags);
+                mClearToast?.Invoke(boot.Hud, null);
+                var fBanner = typeof(ForestSurvivalHud).GetField("_centerBannerGo", flags);
+                ((GameObject)fBanner?.GetValue(boot.Hud))?.SetActive(false);
+            }
+
+            static void SetupRichHeroCabinBase(ForestSliceBoot boot, int targetStar, int targetPetals)
+            {
+                var sim = boot.Sim;
+                sim.CampLevel = 5; // MaxHeroLevelCap = 25
+                sim.Add(SurvRes.HeroExp, 18000 - sim.Get(SurvRes.HeroExp));
+                sim.Add(SurvRes.SkillBook, 45 - sim.Get(SurvRes.SkillBook));
+                sim.Add(SurvRes.ShardUnivLeg, 12);
+                sim.Add(SurvRes.ShardUnivEpic, 18);
+                sim.AutoExchangeUniversalShards = true;
+
+                sim.AddBadge(TacticalBadgeId.EnergyCore, 2);
+                sim.AddBadge(TacticalBadgeId.ThornShield, 2);
+                sim.AddBadge(TacticalBadgeId.EagleScope, 1);
+
+                var h = sim.Heroes[0]; // 大锤
+                h.star = targetStar;
+                h.starPetals = targetPetals;
+                h.shards = 8;
+                h.skillLevels[0] = 2;
+                h.skillLevels[1] = targetStar >= 1 ? 2 : 0;
+                h.skillLevels[2] = targetStar >= 2 ? 1 : 0;
+                h.skillLevels[3] = targetStar >= 3 ? 1 : 0;
+                h.spentSkillBooks = 20;
+                h.equipTiers[0] = 2;
+                h.equipTiers[1] = 2;
+                h.equipTiers[2] = 1;
+                h.equipTiers[3] = 1;
+                if (targetStar >= 1) h.equippedBadges[0] = TacticalBadgeId.ThornShield;
+                if (targetStar >= 3) h.equippedBadges[1] = TacticalBadgeId.EnergyCore;
+
+                while (h.level < 15 && sim.TryLevelUpHeroWithExp(0, out _)) { }
+                // Top up HeroExp to a crisp display figure (15,800 -> 1.58万)
+                int curExp = sim.Get(SurvRes.HeroExp);
+                sim.Add(SurvRes.HeroExp, 15800 - curExp);
+            }
+
+            ForestSurvivalHud.EditorTopSafePadOverride = 48f;
+            try
+            {
+                // 1. econ_01_cabin_exp_and_reset.png
+                CaptureArena720x1280(1, (boot, _) =>
+                {
+                    SetupRichHeroCabinBase(boot, targetStar: 1, targetPetals: 3);
+                    boot.Hud.OpenHeroDetailModal(0, 0);
+                    ClearOverlays(boot, BF);
+                }, (boot, _) =>
+                {
+                    var h = boot.Sim.Heroes[0];
+                    report.AppendLine($"SHOT_01: hero={h.name} lv={h.level}/{boot.Sim.MaxHeroLevelCap} star={h.star}+{h.starPetals}/5 exp={boot.Sim.Get(SurvRes.HeroExp)}");
+                }, "econ_01_cabin_exp_and_reset.png", OwnBrainDir, CoordBrainDir);
+
+                // 2. econ_02_skill_upgrade_popup.png
+                CaptureArena720x1280(1, (boot, _) =>
+                {
+                    SetupRichHeroCabinBase(boot, targetStar: 2, targetPetals: 2);
+                    boot.Hud.OpenHeroDetailModal(0, 0);
+                    boot.Hud.OpenHeroSkillDetailPopup(0, 0);
+                    ClearOverlays(boot, BF);
+                }, (boot, _) =>
+                {
+                    var sk = boot.Sim.GetHeroSkillDef(0, 0);
+                    report.AppendLine($"SHOT_02: skill={sk.name} lv={sk.currentLv}/{sk.maxLv} cost={sk.bookCostNext} books={boot.Sim.Get(SurvRes.SkillBook)}");
+                }, "econ_02_skill_upgrade_popup.png", OwnBrainDir, CoordBrainDir);
+
+                // 3. econ_03_star_petals_and_shards.png
+                CaptureArena720x1280(1, (boot, _) =>
+                {
+                    SetupRichHeroCabinBase(boot, targetStar: 1, targetPetals: 3);
+                    boot.Hud.OpenHeroDetailModal(0, 1);
+                    ClearOverlays(boot, BF);
+                }, (boot, _) =>
+                {
+                    var h = boot.Sim.Heroes[0];
+                    report.AppendLine($"SHOT_03: star={h.star} petals={h.starPetals} shards={h.shards} univLeg={boot.Sim.Get(SurvRes.ShardUnivLeg)}");
+                }, "econ_03_star_petals_and_shards.png", OwnBrainDir, CoordBrainDir);
+
+                // 4. econ_04_badges_and_workshop_gear.png
+                CaptureArena720x1280(2, (boot, _) =>
+                {
+                    SetupRichHeroCabinBase(boot, targetStar: 3, targetPetals: 1);
+                    var sim = boot.Sim;
+                    CampNode smithy = sim.Find("smithy");
+                    if (smithy != null) { smithy.state = NodeState.Active; smithy.level = 3; }
+                    CampNode tailor = sim.Find("tailor");
+                    if (tailor != null) { tailor.state = NodeState.Active; tailor.level = 3; }
+
+                    // Stock workshop materials so Tier 2->3 and Tier 1->2 upgrades show green craft/upgrade states alongside material counts!
+                    sim.Add(SurvRes.MetalPipe, 6);
+                    sim.Add(SurvRes.Blueprint, 8);
+                    sim.Add(SurvRes.FurCoat, 2);
+                    sim.Add(SurvRes.IronIngot, 6);
+                    sim.Add(SurvRes.LeatherBoots, 2);
+                    sim.Add(SurvRes.Nails, 8);
+                    sim.Add(SurvRes.Parts, 4);
+
+                    var h = sim.Heroes[0];
+                    h.equipTiers[0] = 2; // 锻钢强化武器 -> 合金破甲重武 (ready!)
+                    h.equipTiers[1] = 3; // 加绒御寒皮甲 (紫品3阶!) -> 废土复合钢甲
+                    h.equipTiers[2] = 2; // 防荆棘猎皮靴 -> 铁掌行军战靴 (ready!)
+                    h.equipTiers[3] = 1; // 防尘风镜 -> 裂片瞄准护目镜 (ready!)
+
+                    boot.Hud.OpenHeroDetailModal(0, 3);
+                    ClearOverlays(boot, BF);
+                }, (boot, _) =>
+                {
+                    var h = boot.Sim.Heroes[0];
+                    report.AppendLine($"SHOT_04: gears=[{h.equipTiers[0]},{h.equipTiers[1]},{h.equipTiers[2]},{h.equipTiers[3]}] badges=[{h.equippedBadges[0]},{h.equippedBadges[1]}]");
+                }, "econ_04_badges_and_workshop_gear.png", OwnBrainDir, CoordBrainDir);
+
+                // 5. econ_05_chalkboard_formation_aura.png
+                CaptureArena720x1280(2, (boot, cam) =>
+                {
+                    var sim = boot.Sim;
+                    sim.CampLevel = 12; // 5-hero squad cap!
+                    sim.GmUnlockAllHeroesAndFormations();
+                    int[] levels = { 22, 20, 19, 21, 18, 18 };
+                    int[] stars = { 3, 2, 2, 3, 2, 2 };
+                    for (int i = 0; i < sim.Heroes.Count && i < levels.Length; i++)
+                    {
+                        var h = sim.Heroes[i];
+                        h.level = levels[i];
+                        h.star = stars[i];
+                        h.starPetals = 2;
+                        h.equipTiers[0] = 2;
+                        h.equipTiers[1] = 2;
+                    }
+
+                    // Deploy 5 heroes across 3x3 chalkboard activating Faction Resonance Aura (2 IronGuard + 2 ForestPact + 1 WasteTech -> +18%!)
+                    for (int s = 0; s < 9; s++) sim.FormationSlots[s] = -1;
+                    sim.TryPlaceHeroInFormation(0, 1 * 3 + 2, out _); // 大锤 (Iron) Mid-Front
+                    sim.TryPlaceHeroInFormation(2, 0 * 3 + 2, out _); // 雷猛 (Iron) Top-Front
+                    sim.TryPlaceHeroInFormation(1, 2 * 3 + 1, out _); // 小棠 (Tech) Bot-Mid
+                    sim.TryPlaceHeroInFormation(3, 0 * 3 + 0, out _); // 林砚 (Forest) Top-Back
+                    sim.TryPlaceHeroInFormation(5, 2 * 3 + 0, out _); // 老陈头 (Forest) Bot-Back
+                    sim.TrySelectFormation(TacticalFormationId.ResistBarrier, out _);
+
+                    boot.Hud.OpenTacticalFormationModal();
+                    ClearOverlays(boot, BF);
+                }, (boot, cam) =>
+                {
+                    boot.Sim.GetFactionAuraState(out string auraTitle, out _, out float pct, out _, out _, out _);
+                    report.AppendLine($"SHOT_05: deployed={boot.Sim.GetDeployedHeroCount()}/{boot.Sim.GetMaxDeployHeroCount()} fmt={boot.Sim.SelectedFormation} aura={auraTitle}({pct:P0})");
+                }, "econ_05_chalkboard_formation_aura.png", OwnBrainDir, CoordBrainDir);
+
+                // 6. econ_06_radio_broadcast_gacha.png
+                CaptureArena720x1280(1, (boot, cam) =>
+                {
+                    var sim = boot.Sim;
+                    CampNode rp = sim.Find("radio_post");
+                    if (rp != null) { rp.state = NodeState.Active; rp.level = 1; }
+                    sim.CampLevel = 5;
+                    sim.TotalRecruitPulls = 6;
+                    sim.RecruitPityCounter = 6; // 6/10 pity progress (4 pulls until guaranteed!)
+                    int curTk = sim.Get(SurvRes.RecruitTicket);
+                    sim.Add(SurvRes.RecruitTicket, 18 - curTk);
+
+                    // Unlock 3 heroes and show rich shard counts on remaining featured heroes
+                    sim.Heroes[0].star = 2;
+                    sim.Heroes[1].star = 1;
+                    sim.Heroes[2].unlocked = true;
+                    sim.Heroes[2].star = 1;
+                    sim.Heroes[3].shards = 7;
+                    sim.Heroes[5].shards = 6;
+
+                    boot.Hud.OpenRadioRecruitModal();
+                    ClearOverlays(boot, BF);
+                }, (boot, cam) =>
+                {
+                    report.AppendLine($"SHOT_06: tickets={boot.Sim.Get(SurvRes.RecruitTicket)} totalPulls={boot.Sim.TotalRecruitPulls} pityRem={boot.Sim.GetRecruitPullsUntilGuaranteed()}");
+                }, "econ_06_radio_broadcast_gacha.png", OwnBrainDir, CoordBrainDir);
+
+                // 7. econ_07_stage_poster_patrol_chest.png
+                CaptureArena720x1280(2, (boot, cam) =>
+                {
+                    var sim = boot.Sim;
+                    sim.CampLevel = 9; // 4-5 squad slots
+                    sim.GmUnlockAllHeroesAndFormations();
+                    for (int i = 0; i < sim.Heroes.Count; i++)
+                    {
+                        sim.Heroes[i].level = 14 + (5 - i);
+                        sim.Heroes[i].star = 2;
+                    }
+                    sim.AutoDeployRecommendedFormation();
+
+                    // Stage 10 Boss stage with ResistBarrier blueprint pending first clear + 60 mins accumulated Patrol Chest!
+                    sim.GmSetBattleStage(10);
+                    sim.HordeWaveCleared = 9;
+                    sim.PatrolAccumSec = 3600f; // 60 minutes accumulated!
+
+                    boot.Hud.OpenStagePosterModal();
+                    ClearOverlays(boot, BF);
+                }, (boot, cam) =>
+                {
+                    boot.Sim.GetPatrolPendingRewards(out int pExp, out int pCoins, out int pBooks, out int pMins);
+                    report.AppendLine($"SHOT_07: stage={boot.Sim.CurrentBattleStage} patrolMins={pMins} exp={pExp} coins={pCoins} books={pBooks}");
+                }, "econ_07_stage_poster_patrol_chest.png", OwnBrainDir, CoordBrainDir);
+
+                // 8. econ_08_bag_four_tabs_shards_choicebox.png
+                CaptureArena720x1280(2, (boot, _) =>
+                {
+                    var sim = boot.Sim;
+                    sim.CampLevel = 6;
+                    sim.Add(SurvRes.HeroExp, 12500 - sim.Get(SurvRes.HeroExp));
+                    sim.Add(SurvRes.RecruitTicket, 12 - sim.Get(SurvRes.RecruitTicket));
+                    sim.Add(SurvRes.ShardUnivLeg, 15);
+                    sim.Add(SurvRes.ShardUnivEpic, 24);
+                    sim.Add(SurvRes.ChoiceResBox, 3);
+
+                    // Give all 6 heroes shards; make 雷猛 (idx 2) locked with 12/10 shards to highlight [可合成] + [合成英雄]!
+                    sim.Heroes[0].star = 2; sim.Heroes[0].shards = 9;
+                    sim.Heroes[1].star = 1; sim.Heroes[1].shards = 6;
+                    sim.Heroes[2].unlocked = false; sim.Heroes[2].shards = 12; // 可合成!
+                    sim.Heroes[3].unlocked = true; sim.Heroes[3].star = 1; sim.Heroes[3].shards = 8;
+                    sim.Heroes[4].unlocked = true; sim.Heroes[4].star = 1; sim.Heroes[4].shards = 14;
+                    sim.Heroes[5].unlocked = false; sim.Heroes[5].shards = 7;
+
+                    // Unlock formation blueprints via HordeWaveCleared = 16 so [碎片] tab displays both active & uncollected formation chips!
+                    sim.HordeWaveCleared = 16;
+
+                    boot.Hud.OpenBagInventoryModal(2); // Tab 2 = [碎片], select 雷猛碎片 to show [合成英雄] in inspector!
+                    var fSelKey = typeof(ForestSurvivalHud).GetField("_wwBagSelectedKey", BF);
+                    var mRefreshBag = typeof(ForestSurvivalHud).GetMethod("RefreshBagInventoryModal", BF);
+                    fSelKey?.SetValue(boot.Hud, "shard_hero_leimeng");
+                    mRefreshBag?.Invoke(boot.Hud, null);
+                    ClearOverlays(boot, BF);
+                }, (boot, _) =>
+                {
+                    report.AppendLine($"SHOT_08: bagTab=2 univLeg={boot.Sim.Get(SurvRes.ShardUnivLeg)} univEpic={boot.Sim.Get(SurvRes.ShardUnivEpic)} leimengShards={boot.Sim.Heroes[2].shards}");
+                }, "econ_08_bag_four_tabs_shards_choicebox.png", OwnBrainDir, CoordBrainDir);
+            }
+            finally
+            {
+                ForestSurvivalHud.EditorTopSafePadOverride = 0f;
+            }
+
+            // Restore clean runnable scene
+            EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            new GameObject("MainCamera", typeof(Camera)) { tag = "MainCamera" };
+            new GameObject("ForestSliceBoot", typeof(ForestSliceBoot));
+            EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene(), ScenePath);
+
+            report.AppendLine($"ALL_HERO_ECONOMY_VERIFICATIONS_PASSED={allPassed}");
+            File.WriteAllText("/tmp/mori_econ_verify_report.txt", report.ToString());
+            Debug.Log("[VerifyHeroEconomyAndSystems]\n" + report);
+            if (!allPassed)
+                EditorApplication.Exit(1);
+        }
+
+        // =====================================================================
+        // Phase-2 Full-Body Standing Heroes, 3x3 9-Hero Matrix (`阿飒`, `青禾`, `周博士`),
+        // 3-Faction Wangpai Aura & 9-Part Skeletal Combat — 8 Benchmark 720x1280 Captures
+        // =====================================================================
+        public static void VerifyPhase2FullBodyAndNineHeroes()
+        {
+            const string OwnBrainDir = "/Users/rosa/.gemini/antigravity/brain/11dc9d30-a35b-4424-ae19-34ec4abdc193";
+            const string CoordBrainDir = "/Users/rosa/.gemini/antigravity/brain/1b3cbc05-17b2-44a9-ba22-41684be97e65";
+            Directory.CreateDirectory(OwnBrainDir);
+            Directory.CreateDirectory(CoordBrainDir);
+
+            AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+            var report = new System.Text.StringBuilder();
+            bool allPassed = true;
+
+            const System.Reflection.BindingFlags BF =
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance;
+
+            // -----------------------------------------------------------------
+            // A. Audit all 18 Phase-2 Assets (9 fullbody_*, 3 bust_*, 3 ico_shard_*, 3 *_puppet_atlas)
+            // -----------------------------------------------------------------
+            string[] heroIds =
+            {
+                "dachui", "xiaotang", "leimeng",
+                "linyan", "tieshu", "laochentou",
+                "qinghe", "asa", "zhoudr"
+            };
+            string[] newHeroIds = { "asa", "qinghe", "zhoudr" };
+
+            int verifiedFullBody = 0;
+            for (int i = 0; i < heroIds.Length; i++)
+            {
+                string[] mipKeys = { "fullbody_" + heroIds[i], "bust_" + heroIds[i] };
+                for (int m = 0; m < mipKeys.Length; m++)
+                {
+                    string mPath = "Assets/Mori/ForestSlice/Resources/ForestArt/" + mipKeys[m] + ".png";
+                    var mImp = AssetImporter.GetAtPath(mPath) as TextureImporter;
+                    if (mImp != null && (!mImp.mipmapEnabled || mImp.filterMode != FilterMode.Trilinear))
+                    {
+                        mImp.mipmapEnabled = true;
+                        mImp.filterMode = FilterMode.Trilinear;
+                        mImp.mipMapBias = -0.35f;
+                        mImp.SaveAndReimport();
+                    }
+                }
+
+                string key = "fullbody_" + heroIds[i];
+                string assetPath = "Assets/Mori/ForestSlice/Resources/ForestArt/" + key + ".png";
+                var imp = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+                var ps = imp != null ? imp.GetPlatformTextureSettings("WeixinMiniGame") : null;
+                Sprite sp = Resources.Load<Sprite>("ForestArt/" + key);
+                bool ok = sp != null && imp != null
+                          && imp.textureType == TextureImporterType.Sprite
+                          && ps != null && ps.overridden
+                          && ps.format == TextureImporterFormat.ASTC_4x4
+                          && ps.maxTextureSize == 1024;
+                if (ok) verifiedFullBody++;
+                else
+                {
+                    allPassed = false;
+                    report.AppendLine($"FAIL_FULLBODY[{key}]: sp={(sp != null)} type={imp?.textureType} wxFmt={ps?.format} wxMax={ps?.maxTextureSize}");
+                }
+            }
+
+            int verifiedNewSprites = 0;
+            for (int i = 0; i < newHeroIds.Length; i++)
+            {
+                string[] keys = { "bust_" + newHeroIds[i], "ico_shard_" + newHeroIds[i] };
+                for (int k = 0; k < keys.Length; k++)
+                {
+                    string key = keys[k];
+                    string assetPath = "Assets/Mori/ForestSlice/Resources/ForestArt/" + key + ".png";
+                    var imp = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+                    var ps = imp != null ? imp.GetPlatformTextureSettings("WeixinMiniGame") : null;
+                    Sprite sp = Resources.Load<Sprite>("ForestArt/" + key);
+                    bool ok = sp != null && imp != null
+                              && imp.textureType == TextureImporterType.Sprite
+                              && ps != null && ps.overridden
+                              && ps.format == TextureImporterFormat.ASTC_4x4;
+                    if (ok) verifiedNewSprites++;
+                    else
+                    {
+                        allPassed = false;
+                        report.AppendLine($"FAIL_NEW_SPRITE[{key}]: sp={(sp != null)} type={imp?.textureType} wxFmt={ps?.format}");
+                    }
+                }
+            }
+
+            int verifiedNewAtlases = 0;
+            {
+                EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+                var tmpRoot = new GameObject("VerifyPhase2Rigs").transform;
+                for (int i = 0; i < newHeroIds.Length; i++)
+                {
+                    string cid = newHeroIds[i];
+                    string atlasKey = cid + "_puppet_atlas";
+                    string assetPath = "Assets/Mori/ForestSlice/Resources/ForestArt/" + atlasKey + ".png";
+                    var imp = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+                    var ps = imp != null ? imp.GetPlatformTextureSettings("WeixinMiniGame") : null;
+                    Texture2D tex = Resources.Load<Texture2D>("ForestArt/" + atlasKey);
+                    var prof = PuppetRegistry.GetProfile(cid);
+                    var pup = new ForestHeroPuppet(tmpRoot, prof, "Verify_" + cid);
+                    pup.SetSkinTier(OutfitTier.Refugee, autoFallbackToBase: true);
+
+                    bool ok = tex != null && tex.width == 1024 && tex.height == 1024
+                              && imp != null && imp.textureType == TextureImporterType.Default
+                              && ps != null && ps.overridden
+                              && ps.format == TextureImporterFormat.ASTC_4x4
+                              && ps.maxTextureSize == 1024
+                              && pup.ActiveAtlasKey == atlasKey;
+                    if (ok) verifiedNewAtlases++;
+                    else
+                    {
+                        allPassed = false;
+                        report.AppendLine($"FAIL_NEW_ATLAS[{atlasKey}]: tex={(tex != null ? $"{tex.width}x{tex.height}" : "null")} type={imp?.textureType} wxFmt={ps?.format} wxMax={ps?.maxTextureSize} active={pup.ActiveAtlasKey}");
+                    }
+                }
+                UnityEngine.Object.DestroyImmediate(tmpRoot.gameObject);
+            }
+            report.AppendLine($"PHASE2_ASSETS: fullbody={verifiedFullBody}/9 newBustAndShards={verifiedNewSprites}/6 newAtlases={verifiedNewAtlases}/3");
+
+            static void ClearHudOverlays(ForestSliceBoot boot, System.Reflection.BindingFlags flags)
+            {
+                boot.Hud.Tick(0.02f);
+                var mClearToast = typeof(ForestSurvivalHud).GetMethod("ClearFloatingWorldToasts", flags);
+                mClearToast?.Invoke(boot.Hud, null);
+                var fBanner = typeof(ForestSurvivalHud).GetField("_centerBannerGo", flags);
+                ((GameObject)fBanner?.GetValue(boot.Hud))?.SetActive(false);
+            }
+
+            ForestSurvivalHud.EditorTopSafePadOverride = 48f;
+            try
+            {
+                // -----------------------------------------------------------------
+                // 1. p2_01_cabin_fullbody_dachui.png
+                // Hero Cabin Detail (OpenHeroDetailModal(0, 0)) showing 大锤 standing FULL-BODY (fullbody_dachui)
+                // head-to-boots on the cabin woven rug over a grounded oval shadow (zero banner overlap!).
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(1, (boot, _) =>
+                {
+                    var sim = boot.Sim;
+                    sim.CampLevel = 5; // MaxHeroLevelCap = 25 -> Lv.16/25 keeps LevelCapBanner hidden!
+                    sim.Add(SurvRes.HeroExp, 18500 - sim.Get(SurvRes.HeroExp));
+                    sim.Add(SurvRes.SkillBook, 46 - sim.Get(SurvRes.SkillBook));
+                    sim.AddBadge(TacticalBadgeId.ThornShield, 2);
+                    sim.AddBadge(TacticalBadgeId.EnergyCore, 2);
+
+                    var h = sim.Heroes[0]; // 大锤
+                    h.unlocked = true;
+                    h.level = 16;
+                    h.star = 2;
+                    h.starPetals = 3;
+                    h.shards = 9;
+                    h.skillLevels[0] = 3;
+                    h.skillLevels[1] = 2;
+                    h.skillLevels[2] = 2;
+                    h.equipTiers[0] = 2;
+                    h.equipTiers[1] = 2;
+                    h.equipTiers[2] = 2;
+                    h.equipTiers[3] = 1;
+                    h.equippedBadges[0] = TacticalBadgeId.ThornShield;
+
+                    boot.Hud.OpenHeroDetailModal(0, 0);
+                    ClearHudOverlays(boot, BF);
+                }, (boot, _) =>
+                {
+                    var fCabin = typeof(ForestSurvivalHud).GetField("_wwHdCabinPortrait", BF);
+                    var fCapBanner = typeof(ForestSurvivalHud).GetField("_wwHdCapBannerGo", BF);
+                    var img = (UnityEngine.UI.Image)fCabin?.GetValue(boot.Hud);
+                    var capGo = (GameObject)fCapBanner?.GetValue(boot.Hud);
+                    bool ok = img != null && img.sprite != null && img.sprite.name.Contains("fullbody_dachui")
+                              && (capGo == null || !capGo.activeInHierarchy);
+                    if (!ok) allPassed = false;
+                    CheckTopRightCapsuleClear(boot.Hud, "HeroCabinDetailModal", report);
+                    report.AppendLine($"P2_01_DACHUI_CABIN: sprite={img?.sprite?.name} capBannerActive={capGo?.activeInHierarchy} ok={ok}");
+                }, "p2_01_cabin_fullbody_dachui.png", OwnBrainDir, CoordBrainDir);
+
+                // -----------------------------------------------------------------
+                // 2. p2_02_cabin_fullbody_asa.png
+                // Hero Cabin Detail (OpenHeroDetailModal(7, 0)) showing new Legendary IronGuard hero 阿飒
+                // (fullbody_asa, Lv.20/25, 3★) with all 4 unlocked circular skill medallions!
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(2, (boot, cam) =>
+                {
+                    var sim = boot.Sim;
+                    sim.CampLevel = 5; // MaxHeroLevelCap = 25
+                    sim.GmUnlockAllHeroesAndFormations();
+                    sim.Add(SurvRes.HeroExp, 22400 - sim.Get(SurvRes.HeroExp));
+                    sim.Add(SurvRes.SkillBook, 52 - sim.Get(SurvRes.SkillBook));
+                    sim.AddBadge(TacticalBadgeId.EagleScope, 2);
+                    sim.AddBadge(TacticalBadgeId.EnergyCore, 2);
+
+                    var asa = sim.Heroes[7]; // 阿飒 (idx 7)
+                    asa.unlocked = true;
+                    asa.level = 20;
+                    asa.star = 3;
+                    asa.starPetals = 2;
+                    asa.shards = 12;
+                    asa.skillLevels[0] = 3; // 飞爪夺命钩
+                    asa.skillLevels[1] = 2; // 猎杀本能
+                    asa.skillLevels[2] = 2; // 孤狼猎手
+                    asa.skillLevels[3] = 2; // 【夺命钩】增强
+                    asa.equipTiers[0] = 3;
+                    asa.equipTiers[1] = 2;
+                    asa.equipTiers[2] = 2;
+                    asa.equipTiers[3] = 2;
+                    asa.equippedBadges[0] = TacticalBadgeId.EagleScope;
+                    asa.equippedBadges[1] = TacticalBadgeId.EnergyCore;
+
+                    sim.TryPlaceHeroInFormation(7, 1 * 3 + 2, out _);
+
+                    boot.Hud.OpenHeroDetailModal(7, 0);
+                    ClearHudOverlays(boot, BF);
+                }, (boot, cam) =>
+                {
+                    var fCabin = typeof(ForestSurvivalHud).GetField("_wwHdCabinPortrait", BF);
+                    var img = (UnityEngine.UI.Image)fCabin?.GetValue(boot.Hud);
+                    var asa = boot.Sim.Heroes[7];
+                    bool ok = img != null && img.sprite != null && img.sprite.name.Contains("fullbody_asa")
+                              && asa.level == 20 && asa.star == 3;
+                    if (!ok) allPassed = false;
+                    CheckTopRightCapsuleClear(boot.Hud, "HeroCabinDetailModal", report);
+                    report.AppendLine($"P2_02_ASA_CABIN: sprite={img?.sprite?.name} lv={asa.level}/{boot.Sim.MaxHeroLevelCap} star={asa.star} ok={ok}");
+                }, "p2_02_cabin_fullbody_asa.png", OwnBrainDir, CoordBrainDir);
+
+                // -----------------------------------------------------------------
+                // 3. p2_03_cabin_zhoudr_skill_popup.png
+                // Hero Cabin Detail for new Legendary WasteTech hero 周博士 (idx 8, fullbody_zhoudr)
+                // + OpenHeroSkillDetailPopup(8, 0) (超载电磁风暴 5-tier table & highlighted description)!
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(2, (boot, cam) =>
+                {
+                    var sim = boot.Sim;
+                    sim.CampLevel = 5; // MaxHeroLevelCap = 25
+                    sim.GmUnlockAllHeroesAndFormations();
+                    sim.Add(SurvRes.HeroExp, 19600 - sim.Get(SurvRes.HeroExp));
+                    sim.Add(SurvRes.SkillBook, 48 - sim.Get(SurvRes.SkillBook));
+
+                    var zhou = sim.Heroes[8]; // 周博士 (idx 8)
+                    zhou.unlocked = true;
+                    zhou.level = 21;
+                    zhou.star = 3;
+                    zhou.starPetals = 1;
+                    zhou.skillLevels[0] = 2; // 超载电磁风暴 Lv.2 -> Lv.3 highlighted!
+                    zhou.skillLevels[1] = 2;
+                    zhou.skillLevels[2] = 2;
+                    zhou.skillLevels[3] = 1;
+                    zhou.equipTiers[0] = 3;
+                    zhou.equipTiers[1] = 2;
+                    zhou.equipTiers[2] = 2;
+                    zhou.equipTiers[3] = 3;
+
+                    sim.TryPlaceHeroInFormation(8, 1 * 3 + 0, out _);
+
+                    boot.Hud.OpenHeroDetailModal(8, 0);
+                    boot.Hud.OpenHeroSkillDetailPopup(8, 0);
+                    ClearHudOverlays(boot, BF);
+                }, (boot, cam) =>
+                {
+                    var sk = boot.Sim.GetHeroSkillDef(8, 0);
+                    bool ok = sk.name.Contains("超载电磁风暴");
+                    if (!ok) allPassed = false;
+                    CheckTopRightCapsuleClear(boot.Hud, "HeroCabinDetailModal", report);
+                    report.AppendLine($"P2_03_ZHOUDR_SKILL_POPUP: skill={sk.name} lv={sk.currentLv}/{sk.maxLv} ok={ok}");
+                }, "p2_03_cabin_zhoudr_skill_popup.png", OwnBrainDir, CoordBrainDir);
+
+                // -----------------------------------------------------------------
+                // 4. p2_04_roster_3x3_nine_heroes.png
+                // Full-Screen Hero Roster (OpenHeroModal(1)) showing the 3x3 9-Hero Matrix
+                // (8 unlocked vibrant full-body heroes including 青禾/阿飒/周博士 + 1 locked with shards, or all 9 visible!)
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(2, (boot, cam) =>
+                {
+                    var sim = boot.Sim;
+                    sim.CampLevel = 12;
+                    sim.GmUnlockAllHeroesAndFormations();
+                    sim.Add(SurvRes.HeroExp, 24800 - sim.Get(SurvRes.HeroExp));
+                    sim.Add(SurvRes.SkillBook, 56 - sim.Get(SurvRes.SkillBook));
+                    sim.Add(SurvRes.RecruitTicket, 15 - sim.Get(SurvRes.RecruitTicket));
+
+                    int[] lvs = { 23, 20, 21, 22, 18, 1, 19, 22, 21 };
+                    int[] sts = { 3, 2, 3, 3, 2, 1, 2, 3, 3 };
+                    for (int i = 0; i < sim.Heroes.Count; i++)
+                    {
+                        var h = sim.Heroes[i];
+                        h.unlocked = (i != 5); // 8 unlocked (incl. 青禾/阿飒/周博士!) + 老陈头 locked (8/10 shards)
+                        h.level = lvs[i];
+                        h.star = sts[i];
+                        h.starPetals = (i % 3) + 1;
+                        h.shards = (i == 5) ? 8 : 6;
+                        if (h.unlocked)
+                        {
+                            h.equipTiers[0] = 2;
+                            h.equipTiers[1] = 2;
+                        }
+                    }
+
+                    for (int s = 0; s < 9; s++) sim.FormationSlots[s] = -1;
+                    sim.TryPlaceHeroInFormation(0, 1 * 3 + 2, out _); // 大锤
+                    sim.TryPlaceHeroInFormation(2, 2 * 3 + 2, out _); // 雷猛
+                    sim.TryPlaceHeroInFormation(7, 0 * 3 + 2, out _); // 阿飒
+                    sim.TryPlaceHeroInFormation(6, 1 * 3 + 1, out _); // 青禾
+                    sim.TryPlaceHeroInFormation(8, 0 * 3 + 0, out _); // 周博士
+
+                    boot.Hud.OpenHeroModal(1);
+                    ClearHudOverlays(boot, BF);
+                }, (boot, cam) =>
+                {
+                    var fBusts = typeof(ForestSurvivalHud).GetField("_haBusts", BF);
+                    var imgs = (UnityEngine.UI.Image[])fBusts?.GetValue(boot.Hud);
+                    bool ok = imgs != null && imgs.Length == 9 && boot.Sim.Heroes.Count == 9;
+                    for (int i = 0; i < 9 && ok; i++)
+                    {
+                        if (imgs[i] == null || imgs[i].sprite == null || !imgs[i].sprite.name.StartsWith("fullbody_"))
+                            ok = false;
+                    }
+                    if (!ok) allPassed = false;
+                    CheckTopRightCapsuleClear(boot.Hud, "HeroAssignModal", report);
+                    report.AppendLine($"P2_04_ROSTER_3X3: count={boot.Sim.Heroes.Count} fullbodyCardsOk={ok}");
+                }, "p2_04_roster_3x3_nine_heroes.png", OwnBrainDir, CoordBrainDir);
+
+                // -----------------------------------------------------------------
+                // 5. p2_05_chalkboard_fullbody_3faction_aura.png
+                // OpenTacticalFormationModal() showing 5 deployed heroes standing FULL-BODY on #163748 chalkboard cells
+                // (including 阿飒, 青禾, 周博士, with 3-person pure-faction +25% Wangpai IronGuard Faction Aura lit up!),
+                // XX级 at their boots, and the 9-hero scrollable bottom strip!
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(2, (boot, cam) =>
+                {
+                    var sim = boot.Sim;
+                    sim.CampLevel = 12; // 5-hero squad cap
+                    sim.GmUnlockAllHeroesAndFormations();
+
+                    int[] lvs = { 24, 19, 21, 20, 18, 18, 20, 22, 23 };
+                    int[] sts = { 3, 2, 3, 2, 2, 2, 2, 3, 3 }; // 大锤(Leg), 雷猛(3★), 阿飒(Leg) -> 3 Ace IronGuard -> +25% 王牌铁卫团光环!
+                    for (int i = 0; i < sim.Heroes.Count; i++)
+                    {
+                        var h = sim.Heroes[i];
+                        h.unlocked = true;
+                        h.level = lvs[i];
+                        h.star = sts[i];
+                        h.starPetals = 2;
+                        h.equipTiers[0] = 2;
+                        h.equipTiers[1] = 2;
+                    }
+
+                    for (int s = 0; s < 9; s++) sim.FormationSlots[s] = -1;
+                    sim.TryPlaceHeroInFormation(8, 0 * 3 + 0, out _); // 周博士 (Row 0, Back)
+                    sim.TryPlaceHeroInFormation(7, 0 * 3 + 2, out _); // 阿飒   (Row 0, Front)
+                    sim.TryPlaceHeroInFormation(6, 1 * 3 + 0, out _); // 青禾   (Row 1, Back)
+                    sim.TryPlaceHeroInFormation(0, 1 * 3 + 2, out _); // 大锤   (Row 1, Front)
+                    sim.TryPlaceHeroInFormation(2, 2 * 3 + 1, out _); // 雷猛   (Row 2, Mid)
+                    sim.TrySelectFormation(TacticalFormationId.SpearAssault, out _);
+
+                    boot.Hud.OpenTacticalFormationModal();
+
+                    // Scroll bottom 9-hero horizontal strip slightly right so new heroes (青禾/阿飒/周博士) & classic heroes both show cleanly!
+                    var fScroll = typeof(ForestSurvivalHud).GetField("_wwTfRosterScrollContentRt", BF);
+                    var scrollRt = (RectTransform)fScroll?.GetValue(boot.Hud);
+                    if (scrollRt != null)
+                        scrollRt.anchoredPosition = new Vector2(-348f, scrollRt.anchoredPosition.y);
+
+                    ClearHudOverlays(boot, BF);
+                }, (boot, cam) =>
+                {
+                    boot.Sim.GetFactionAuraState(out string auraTitle, out _, out float bonusPct, out int ironCnt, out _, out _);
+                    bool ok = boot.Sim.GetDeployedHeroCount() == 5 && ironCnt == 3 && bonusPct >= 0.15f;
+                    if (!ok) allPassed = false;
+                    CheckTopRightCapsuleClear(boot.Hud, "TacticalFormationModal", report);
+                    report.AppendLine($"P2_05_CHALKBOARD: deployed={boot.Sim.GetDeployedHeroCount()} iron={ironCnt} aura={auraTitle}({bonusPct:P0}) ok={ok}");
+                }, "p2_05_chalkboard_fullbody_3faction_aura.png", OwnBrainDir, CoordBrainDir);
+
+                // -----------------------------------------------------------------
+                // 6. p2_06_radio_fullbody_showcase.png
+                // OpenRadioRecruitModal() showing the 5 featured heroes (阿飒, 周博士, 青禾, 大锤, 林砚) standing FULL-BODY!
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(1, (boot, _) =>
+                {
+                    var sim = boot.Sim;
+                    CampNode rp = sim.Find("radio_post");
+                    if (rp != null) { rp.state = NodeState.Active; rp.level = 2; }
+                    sim.CampLevel = 6;
+                    sim.TotalRecruitPulls = 17;
+                    sim.RecruitPityCounter = 7; // 3 pulls until guaranteed!
+                    sim.Add(SurvRes.RecruitTicket, 20 - sim.Get(SurvRes.RecruitTicket));
+
+                    sim.Heroes[0].unlocked = true; sim.Heroes[0].star = 2; // 大锤
+                    sim.Heroes[3].unlocked = true; sim.Heroes[3].star = 2; // 林砚
+                    sim.Heroes[6].unlocked = true; sim.Heroes[6].star = 1; // 青禾
+                    sim.Heroes[7].unlocked = false; sim.Heroes[7].shards = 8; // 阿飒 8/10
+                    sim.Heroes[8].unlocked = false; sim.Heroes[8].shards = 6; // 周博士 6/10
+
+                    boot.Hud.OpenRadioRecruitModal();
+                    ClearHudOverlays(boot, BF);
+                }, (boot, _) =>
+                {
+                    var fFeat = typeof(ForestSurvivalHud).GetField("_wwGachaFeatBusts", BF);
+                    var featImgs = (UnityEngine.UI.Image[])fFeat?.GetValue(boot.Hud);
+                    bool ok = featImgs != null && featImgs.Length == 5;
+                    for (int i = 0; i < 5 && ok; i++)
+                    {
+                        if (featImgs[i] == null || featImgs[i].sprite == null || !featImgs[i].sprite.name.StartsWith("fullbody_"))
+                            ok = false;
+                    }
+                    if (!ok) allPassed = false;
+                    CheckTopRightCapsuleClear(boot.Hud, "RadioRecruitModal", report);
+                    report.AppendLine($"P2_06_RADIO_SHOWCASE: fullbodyFeatOk={ok} s0={featImgs?[0]?.sprite?.name} s1={featImgs?[1]?.sprite?.name} s2={featImgs?[2]?.sprite?.name}");
+                }, "p2_06_radio_fullbody_showcase.png", OwnBrainDir, CoordBrainDir);
+
+                // -----------------------------------------------------------------
+                // 7. p2_07_bag_9hero_jigsaw_shards.png
+                // OpenBagInventoryModal(2) on [碎片] tab showing all 9 Hero Jigsaw Shards
+                // (including ico_shard_asa, ico_shard_qinghe, ico_shard_zhoudr!) + Universal Shards!
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(2, (boot, _) =>
+                {
+                    var sim = boot.Sim;
+                    sim.CampLevel = 8;
+                    sim.Add(SurvRes.ShardUnivLeg, 18 - sim.Get(SurvRes.ShardUnivLeg));
+                    sim.Add(SurvRes.ShardUnivEpic, 26 - sim.Get(SurvRes.ShardUnivEpic));
+
+                    int[] shardCounts = { 9, 7, 11, 8, 6, 5, 14, 12, 8 };
+                    for (int i = 0; i < sim.Heroes.Count; i++)
+                    {
+                        var h = sim.Heroes[i];
+                        h.shards = shardCounts[i];
+                        if (i == 7)
+                        {
+                            // Keep 阿飒 locked with 12/10 shards to highlight [合成英雄] in the bottom inspector!
+                            h.unlocked = false;
+                        }
+                        else if (i == 8)
+                        {
+                            h.unlocked = false;
+                        }
+                        else
+                        {
+                            h.unlocked = true;
+                            h.star = (i == 0 || i == 3) ? 2 : 1;
+                        }
+                    }
+
+                    sim.HordeWaveCleared = 12;
+                    boot.Hud.OpenBagInventoryModal(2); // [碎片] tab
+                    var fSelKey = typeof(ForestSurvivalHud).GetField("_wwBagSelectedKey", BF);
+                    var mRefreshBag = typeof(ForestSurvivalHud).GetMethod("RefreshBagInventoryModal", BF);
+                    fSelKey?.SetValue(boot.Hud, "shard_hero_asa");
+                    mRefreshBag?.Invoke(boot.Hud, null);
+                    ClearHudOverlays(boot, BF);
+                }, (boot, _) =>
+                {
+                    Sprite sAsa = Resources.Load<Sprite>("ForestArt/ico_shard_asa");
+                    Sprite sQh = Resources.Load<Sprite>("ForestArt/ico_shard_qinghe");
+                    Sprite sZd = Resources.Load<Sprite>("ForestArt/ico_shard_zhoudr");
+                    bool ok = sAsa != null && sQh != null && sZd != null && boot.Sim.Heroes.Count == 9;
+                    if (!ok) allPassed = false;
+                    CheckTopRightCapsuleClear(boot.Hud, "BagInventoryModal", report);
+                    report.AppendLine($"P2_07_BAG_SHARDS: heroes={boot.Sim.Heroes.Count} asaShards={boot.Sim.Heroes[7].shards} iconsOk={ok}");
+                }, "p2_07_bag_9hero_jigsaw_shards.png", OwnBrainDir, CoordBrainDir);
+
+                // -----------------------------------------------------------------
+                // 8. p2_08_arena_new_heroes_skeletal_combat.png
+                // Live Tactical Bridge Arena battle with 阿飒 (asa_puppet_atlas), 青禾 (qinghe_puppet_atlas),
+                // and 周博士 (zhoudr_puppet_atlas) fighting alongside allies in full 9-part skeletal animation
+                // triggering 飞爪夺命钩 / 霜寒捕兽夹阵 / 超载电磁风暴 VFX in-frame!
+                // -----------------------------------------------------------------
+                CaptureArena720x1280(2, (boot, cam) =>
+                {
+                    var sim = boot.Sim;
+                    sim.CampLevel = 12;
+                    sim.GmUnlockAllHeroesAndFormations();
+
+                    for (int i = 0; i < sim.Heroes.Count; i++)
+                    {
+                        var h = sim.Heroes[i];
+                        h.unlocked = true;
+                        h.level = 10; // Tuned against Stage 18 so enemies survive all 3 ultimates mid-frame!
+                        h.star = 3;   // Unlock all 2★/3★ awakenings!
+                        h.skillLevels[0] = 2;
+                        h.skillLevels[1] = 2;
+                        h.skillLevels[2] = 2;
+                        h.skillLevels[3] = 2;
+                        h.skinTier = OutfitTier.Refugee;
+                        h.portraitKey = PuppetRegistry.ResolveBustKey(h.characterId, OutfitTier.Refugee);
+                    }
+
+                    // Spread 5 heroes cleanly across the 3 lanes so zero puppet silhouettes overlap:
+                    // Row 0 (Top): 周博士 (Back-Top), 雷猛 (Front-Top)
+                    // Row 1 (Mid): 阿飒   (Mid-Center) -> center-stage skirmisher grappling hook!
+                    // Row 2 (Bot): 青禾   (Back-Bot), 大锤 (Front-Bot)
+                    for (int s = 0; s < 9; s++) sim.FormationSlots[s] = -1;
+                    sim.TryPlaceHeroInFormation(8, 0 * 3 + 0, out _); // 周博士
+                    sim.TryPlaceHeroInFormation(2, 0 * 3 + 2, out _); // 雷猛
+                    sim.TryPlaceHeroInFormation(7, 1 * 3 + 1, out _); // 阿飒
+                    sim.TryPlaceHeroInFormation(6, 2 * 3 + 0, out _); // 青禾
+                    sim.TryPlaceHeroInFormation(0, 2 * 3 + 2, out _); // 大锤
+                    sim.TrySelectFormation(TacticalFormationId.SpearAssault, out _);
+
+                    sim.GmSetBattleStage(18);
+                    boot.Hud.StartWaveDefenseBattle();
+                    var arena = boot.World.Arena;
+                    arena.AutoCastUlt = false;
+
+                    // Advance 2.35s (47 * 0.05s) so zombies rush well inside the bridge combat zone
+                    for (int step = 0; step < 47; step++)
+                    {
+                        boot.Sim.Tick(0.05f);
+                        boot.World.Tick(0.05f);
+                        boot.View.Tick(0.05f);
+                        boot.Hud.Tick(0.05f);
+                    }
+
+                    // Helper to top up rage01 on deployed HeroUnits
+                    var fHeroes = typeof(ForestTacticalArena).GetField("_heroes", BF);
+                    var heroUnits = (System.Collections.IList)fHeroes.GetValue(arena);
+                    void FillHeroRage(int targetHeroIdx)
+                    {
+                        for (int u = 0; u < heroUnits.Count; u++)
+                        {
+                            object hu = heroUnits[u];
+                            int hIdx = (int)hu.GetType().GetField("heroIdx").GetValue(hu);
+                            if (hIdx == targetHeroIdx)
+                                hu.GetType().GetField("rage01").SetValue(hu, 1.0f);
+                        }
+                    }
+
+                    // 1) Cast 青禾's 霜寒捕兽夹阵 first and advance 0.25s so cryo-flask impacts & spawns ground frost circle + "寒霜冻结!"
+                    FillHeroRage(6);
+                    arena.TryCastHeroUlt(6);
+                    for (int step = 0; step < 5; step++)
+                    {
+                        boot.Sim.Tick(0.05f);
+                        boot.World.Tick(0.05f);
+                        boot.View.Tick(0.05f);
+                        boot.Hud.Tick(0.05f);
+                    }
+
+                    // 2) Cast 阿飒's 飞爪夺命钩 AND 周博士's 超载电磁风暴, then advance 0.12s so hook chain, frost circle & chain lightning are all live simultaneously with 阿飒 unobstructed!
+                    FillHeroRage(7);
+                    FillHeroRage(8);
+                    arena.TryCastHeroUlt(7);
+                    arena.TryCastHeroUlt(8);
+                    for (int step = 0; step < 3; step++)
+                    {
+                        boot.Sim.Tick(0.04f);
+                        boot.World.Tick(0.04f);
+                        boot.View.Tick(0.04f);
+                        boot.Hud.Tick(0.04f);
+                    }
+
+                    var mClearToast = typeof(ForestSurvivalHud).GetMethod("ClearFloatingWorldToasts", BF);
+                    mClearToast?.Invoke(boot.Hud, null);
+                    var fBanner = typeof(ForestSurvivalHud).GetField("_centerBannerGo", BF);
+                    ((GameObject)fBanner?.GetValue(boot.Hud))?.SetActive(false);
+                }, (boot, _) =>
+                {
+                    var arena = boot.World.Arena;
+                    var fHeroes = typeof(ForestTacticalArena).GetField("_heroes", BF);
+                    var fEnemies = typeof(ForestTacticalArena).GetField("_aliveEnemies", BF);
+                    var heroUnits = (System.Collections.IList)fHeroes.GetValue(arena);
+                    var enemyUnits = (System.Collections.IList)fEnemies.GetValue(arena);
+
+                    bool asaOk = false, qingheOk = false, zhoudrOk = false;
+                    for (int i = 0; i < heroUnits.Count; i++)
+                    {
+                        object hu = heroUnits[i];
+                        string hid = (string)hu.GetType().GetField("heroId").GetValue(hu);
+                        var pup = (ForestHeroPuppet)hu.GetType().GetField("puppet").GetValue(hu);
+                        if (hid == "asa" && pup?.ActiveAtlasKey == "asa_puppet_atlas") asaOk = true;
+                        if (hid == "qinghe" && pup?.ActiveAtlasKey == "qinghe_puppet_atlas") qingheOk = true;
+                        if (hid == "zhoudr" && pup?.ActiveAtlasKey == "zhoudr_puppet_atlas") zhoudrOk = true;
+                    }
+                    int aliveZ = 0;
+                    for (int i = 0; i < enemyUnits.Count; i++)
+                    {
+                        object eu = enemyUnits[i];
+                        if ((bool)eu.GetType().GetField("alive").GetValue(eu)) aliveZ++;
+                    }
+                    bool ok = arena.IsBattleActive && !arena.IsResultPending && asaOk && qingheOk && zhoudrOk && aliveZ >= 2;
+                    if (!ok) allPassed = false;
+                    CheckTopRightCapsuleClear(boot.Hud, "WaveCombatHud", report);
+                    report.AppendLine($"P2_08_ARENA_COMBAT: active={arena.IsBattleActive} asa={asaOk} qinghe={qingheOk} zhoudr={zhoudrOk} aliveEnemies={aliveZ} ok={ok}");
+                }, "p2_08_arena_new_heroes_skeletal_combat.png", OwnBrainDir, CoordBrainDir);
+            }
+            finally
+            {
+                ForestSurvivalHud.EditorTopSafePadOverride = 0f;
+            }
+
+            // Restore clean runnable scene
+            EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            new GameObject("MainCamera", typeof(Camera)) { tag = "MainCamera" };
+            new GameObject("ForestSliceBoot", typeof(ForestSliceBoot));
+            EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene(), ScenePath);
+
+            report.AppendLine($"ALL_PHASE2_VERIFICATIONS_PASSED={allPassed}");
+            File.WriteAllText("/tmp/mori_phase2_verify_report.txt", report.ToString());
+            Debug.Log("[VerifyPhase2FullBodyAndNineHeroes]\n" + report);
+            if (!allPassed)
+                EditorApplication.Exit(1);
         }
     }
 }

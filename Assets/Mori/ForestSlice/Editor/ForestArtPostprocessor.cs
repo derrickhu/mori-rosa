@@ -46,6 +46,7 @@ namespace Mori.ForestSlice.EditorTools
 
             if (key == "trees_atlas" || key.Contains("_puppet_atlas"))
             {
+                imp.npotScale = TextureImporterNPOTScale.None;
                 imp.textureType = TextureImporterType.Default;
                 imp.wrapMode = TextureWrapMode.Clamp;
                 imp.alphaIsTransparency = true;
@@ -53,26 +54,34 @@ namespace Mori.ForestSlice.EditorTools
                 return;
             }
 
+            bool isAnimStrip = key.StartsWith("anim_");
+            bool isWwUi = key.StartsWith("ww_");
+            bool useUiMipmaps = key.StartsWith("fullbody_") || key.StartsWith("bust_");
+            imp.mipmapEnabled = useUiMipmaps;
+            imp.filterMode = useUiMipmaps ? FilterMode.Trilinear : FilterMode.Bilinear;
+            imp.mipMapBias = useUiMipmaps ? -0.35f : 0f;
+            imp.npotScale = TextureImporterNPOTScale.None;
             imp.textureType = TextureImporterType.Sprite;
             imp.spriteImportMode = SpriteImportMode.Single;
             imp.wrapMode = TextureWrapMode.Clamp;
-            imp.spritePixelsPerUnit = key == "battle_arena_bg" ? 100f : ForestArt.PPU;
+            imp.spritePixelsPerUnit = (key == "battle_arena_bg" || isWwUi) ? 100f : ForestArt.PPU;
+            imp.maxTextureSize = isWwUi ? (key == "ww_hero_cabin_bg" ? 2048 : 512) : 2048;
             var st = new TextureImporterSettings();
             imp.ReadTextureSettings(st);
             st.spriteMeshType = SpriteMeshType.FullRect;
             st.spriteAlignment = (int)SpriteAlignment.Custom;
             st.spritePivot = PivotFor(key);
             imp.SetTextureSettings(st);
-            int weixinMaxSize = key == "battle_arena_bg"
+            int weixinMaxSize = (key == "battle_arena_bg" || key == "ww_hero_cabin_bg" || isAnimStrip)
                 ? 2048
-                : ((key.StartsWith("loading_") || key == "crisis_horde_bg") ? 1024 : 512);
+                : (isWwUi ? 512 : ((key.StartsWith("fullbody_") || key.StartsWith("loading_") || key == "crisis_horde_bg") ? 1024 : 512));
             ApplyWeixinCompression(imp, key, weixinMaxSize);
         }
 
         static void ApplyWeixinCompression(TextureImporter imp, string key, int maxSize)
         {
             // iOS / Android 微信小游戏 WebGL1 原生硬件支持 ASTC（且 DecompressASTC 桌面兜底开启），彻底解决 iOS 不支持 ETC2 花屏报错！
-            bool highDetail = key == "battle_arena_bg" || key.Contains("_puppet_atlas") || key.StartsWith("bust_") || key.StartsWith("ico_") || key.StartsWith("dock_");
+            bool highDetail = key == "battle_arena_bg" || key.StartsWith("ww_") || key.Contains("_puppet_atlas") || key.StartsWith("anim_") || key.StartsWith("fullbody_") || key.StartsWith("bust_") || key.StartsWith("ico_") || key.StartsWith("dock_");
             TextureImporterPlatformSettings ps = imp.GetPlatformTextureSettings("WeixinMiniGame");
             ps.overridden = true;
             ps.maxTextureSize = maxSize;
@@ -85,8 +94,8 @@ namespace Mori.ForestSlice.EditorTools
 
         static Vector2 PivotFor(string key)
         {
-            if (key.StartsWith("ico_") || key.StartsWith("dock_") || key.StartsWith("btn_") ||
-                key.StartsWith("rec_") || key.StartsWith("bust_") || key.StartsWith("fx_") ||
+            if (key.StartsWith("ww_") || key.StartsWith("ico_") || key.StartsWith("dock_") || key.StartsWith("btn_") ||
+                key.StartsWith("rec_") || key.StartsWith("bust_") || key.StartsWith("fullbody_") || key.StartsWith("fx_") ||
                 key.StartsWith("proj_") || key.StartsWith("loading_") || key.StartsWith("wx_icon_") ||
                 key == "crisis_horde_bg" || key == "battle_arena_bg" || key == "cargo_stack_unit" || key == "city_gold_airdrop")
                 return new Vector2(0.5f, 0.5f);

@@ -226,14 +226,33 @@ namespace Mori.ForestSlice.EditorTools
                 var imp = AssetImporter.GetAtPath(path) as TextureImporter;
                 if (imp == null) continue;
                 string key = Path.GetFileNameWithoutExtension(path);
-                int maxSz = (key == "trees_atlas" || key == "battle_arena_bg")
+                bool isAnimStrip = key.StartsWith("anim_");
+                bool isPuppetAtlas = key.Contains("_puppet_atlas");
+                bool isFullBody = key.StartsWith("fullbody_");
+                bool useUiMipmaps = isFullBody || key.StartsWith("bust_");
+                int maxSz = (key == "trees_atlas" || key == "battle_arena_bg" || key == "ww_hero_cabin_bg" || isAnimStrip)
                     ? 2048
-                    : ((key.Contains("_puppet_atlas") || key.StartsWith("loading_") || key == "crisis_horde_bg") ? 1024 : 512);
-                bool highDetail = key == "battle_arena_bg" || key.Contains("_puppet_atlas") || key.StartsWith("bust_") || key.StartsWith("ico_") || key.StartsWith("dock_");
+                    : (key.StartsWith("ww_") ? 512 : ((isPuppetAtlas || isFullBody || key.StartsWith("loading_") || key == "crisis_horde_bg") ? 1024 : 512));
+                bool highDetail = key == "battle_arena_bg" || key.StartsWith("ww_") || isPuppetAtlas || isAnimStrip || isFullBody || key.StartsWith("bust_") || key.StartsWith("ico_") || key.StartsWith("dock_");
                 TextureImporterFormat targetFmt = highDetail ? TextureImporterFormat.ASTC_4x4 : TextureImporterFormat.ASTC_6x6;
                 var ps = imp.GetPlatformTextureSettings("WeixinMiniGame");
-                if (!ps.overridden || ps.format != targetFmt || ps.maxTextureSize != maxSz || ps.crunchedCompression)
+                bool needNpotFix = (isAnimStrip || isPuppetAtlas) && imp.npotScale != TextureImporterNPOTScale.None;
+                bool needMipFix = useUiMipmaps && (!imp.mipmapEnabled || imp.filterMode != FilterMode.Trilinear);
+                if (needNpotFix || needMipFix || !ps.overridden || ps.format != targetFmt || ps.maxTextureSize != maxSz || ps.crunchedCompression)
                 {
+                    if (needNpotFix)
+                    {
+                        imp.npotScale = TextureImporterNPOTScale.None;
+                        imp.wrapMode = TextureWrapMode.Clamp;
+                        imp.filterMode = FilterMode.Bilinear;
+                        imp.maxTextureSize = 2048;
+                    }
+                    if (useUiMipmaps)
+                    {
+                        imp.mipmapEnabled = true;
+                        imp.filterMode = FilterMode.Trilinear;
+                        imp.mipMapBias = -0.35f;
+                    }
                     ps.overridden = true;
                     ps.maxTextureSize = maxSz;
                     ps.format = targetFmt;

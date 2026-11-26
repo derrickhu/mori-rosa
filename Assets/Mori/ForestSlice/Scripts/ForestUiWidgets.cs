@@ -121,7 +121,7 @@ namespace Mori.ForestSlice
 
             if (sp == ForestComicUiSkin.BtnRed)
             {
-                MakeText("Arrow", rt, "↩", 36, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+                MakeText("Arrow", rt, "←", 36, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
             }
 
             var btn = rt.gameObject.AddComponent<Button>();

@@ -54,6 +54,88 @@ namespace Mori.ForestSlice
         SeedHerb = 32,     // 深山草药种（采集/收获自循环，高产山草药）
         SeedGolden = 33,   // 变异黄金良种（搜刮/尸潮/施肥变异，双倍全品类大丰收+铜币）
         Compost = 34,      // 有机堆肥（山林畜牧栏副产，反哺农田瞬间催熟50%+增产1.5倍！）
+
+        // --- 英雄独立养成通货与功能补给箱（不占基础仓库容量） ---
+        HeroExp = 35,        // 英雄经验（金色晶簇，唯一用于英雄升级！）
+        RecruitTicket = 36,  // 电台招募卡（短波广播站抽英雄与碎片）
+        SkillBook = 37,      // 战术技能书（提升英雄1~4技能等级）
+        ShardUnivEpic = 38,  // 史诗万能碎片（1:1补齐史诗/稀有英雄碎片）
+        ShardUnivLeg = 39,   // 传说万能碎片（1:1补齐传说英雄碎片）
+        ChoiceResBox = 40,   // 原料自选补给箱（任选原木/废铁/净水/粗麻布/山草药）
+        SpeedHourglass = 41, // 工坊加速沙漏（缩短作坊/建造/农牧倒计时5分钟）
+    }
+
+    public enum HeroFaction
+    {
+        IronGuard = 0,   // 铁卫团 (大锤, 雷猛, 阿飒)
+        ForestPact = 1,  // 山林盟 (林砚, 老陈头, 青禾)
+        WasteTech = 2,   // 废土科工 (小棠, 铁叔, 周博士)
+    }
+
+    public enum HeroEquipSlot
+    {
+        Weapon = 0,      // 武器槽 (锻造坊: 攻击 + 技能强度)
+        Armor = 1,       // 护甲槽 (裁缝坊: 生命 + 护甲, 同步换装!)
+        Boots = 2,       // 战靴槽 (裁缝坊: 生命 + 抗性)
+        Goggles = 3,     // 战术镜槽 (锻造/电子: 技能强度 + 暴击率)
+    }
+
+    public enum TacticalBadgeId
+    {
+        None = 0,
+        EnergyCore = 1,  // 先手电芯徽章 (ico_badge_energy): 开场怒气+40, 技能强度+10%
+        ThornShield = 2, // 路障荆棘徽章 (ico_badge_thorn): 护甲+120, 近战反伤22%
+        EagleScope = 3,  // 鹰眼狙击徽章 (ico_badge_eagle): 暴击率+15%, 攻击+12%
+        PyroPowder = 4,  // 高爆火药徽章 (ico_badge_pyro): 技能强度+22%, 元素/范围伤害+18%
+        BloodFury = 5,   // 狂战士血怒徽章 (ico_badge_berserk): 生命<50%时攻速+30%, 普攻吸血12%
+        MedicCross = 6,  // 白衣圣手徽章 (ico_badge_medic): 治疗与护盾量+28%, 抗性+90
+    }
+
+    public struct HeroSkillDef
+    {
+        public int slotIndex;         // 0..3
+        public string name;
+        public string iconKey;
+        public int unlockStars;       // 0, 1, 2, 3
+        public int currentLv;         // 0 if locked, else 1..5
+        public int maxLv;             // 5
+        public int reqStarsForNextLv; // Lv1->2 needs 1★, Lv2->3 needs 2★, Lv3->4 needs 3★, Lv4->5 needs 4★
+        public int bookCostNext;      // e.g. 10, 20, 35, 55
+        public bool isUnlocked;
+        public string descFormatted;
+        public string metricLabel;
+        public string[] tierValues;   // length 5 strings
+    }
+
+    public struct HeroComputedStats
+    {
+        public int maxHp;
+        public int atk;
+        public int skillPower;
+        public int range;             // 1..5
+        public int armor;
+        public int resistance;
+        public float critRate;        // e.g. 0.08f
+        public float critMult;        // e.g. 1.50f
+        public float startRage;       // 0..100 rage points (divide by 100f for rage01)
+        public float thornsPct;
+        public float lifestealPct;
+        public float healShieldBonus;
+        public float activeSkillMult; // e.g. 2.20f -> 3.50f scaling with skillLevels[0]
+        public int combatPower;
+    }
+
+    public struct GachaPullResult
+    {
+        public bool isFullHero;
+        public bool isNewUnlock;
+        public int heroIdx;
+        public int shardCount;
+        public SurvRes bonusItem;
+        public int bonusCount;
+        public string label;
+        public string iconKey;
+        public int rarity0to5;
     }
 
     public enum HeroRarity
@@ -103,10 +185,12 @@ namespace Mori.ForestSlice
 
     public enum TacticalFormationId
     {
-        StandardLine = 0,   // 基础防线阵 (初始解锁)
-        SpearAssault = 1,   // 尖锥突击阵 (通关第4关解锁)
-        IronBastion = 2,    // 铁桶抗性阵 (通关第10关解锁)
-        VolleyFire = 3,     // 火力齐射阵 (通关第18关解锁)
+        StandardLine = 0,   // 默认防线阵 (ico_fmt_default, 初始解锁)
+        SpearAssault = 1,   // 尖锥突击阵 (ico_fmt_spear, 第4关图谱, 收集全员+2%)
+        ResistBarrier = 2,  // 抗性增强阵 (ico_fmt_resist, 第10关图谱, 收集全员+2%, 上阵全队抗性+120)
+        IronBastion = 3,    // 铁桶护甲阵 (ico_fmt_bastion, 第16关图谱, 收集全员+3%, 前排护甲+180 & 回血)
+        VolleyFire = 4,     // 火力齐射阵 (ico_fmt_energy, 第20关图谱, 收集全员+3%, 中后排攻速+25%)
+        EnergySurge = 5,    // 能量激涌阵 (ico_fmt_energy, 第24关图谱, 收集全员+5%, 中后排开场怒气+40)
     }
 
     public enum HeroCombatRole
@@ -145,6 +229,11 @@ namespace Mori.ForestSlice
         public int rewardCoins;
         public int rewardMedals;
         public int rewardBlueprints;
+        public int rewardHeroExp;
+        public int rewardRecruitTickets;
+        public int rewardSkillBooks;
+        public int rewardShardHeroIdx;
+        public int rewardShardCount;
         public int unlockHeroIdx;      // -1 if none, else hero idx unlocked on first clear
         public int unlockFormationIdx; // -1 if none, else (int)TacticalFormationId unlocked on first clear
         public string milestoneTag;    // e.g. "首通招募：大锤（铁壁重卫）" or "首通解锁：尖锥突击阵" or ""
@@ -152,10 +241,12 @@ namespace Mori.ForestSlice
 
     public struct SlotStatBuff
     {
-        public string shortTag;   // e.g. "生命+15%" / "减伤+25%" / "暴伤+25%" / "攻速+25%" / ""
+        public string shortTag;   // e.g. "护甲+80" / "减伤+25%" / "抗性+120" / "怒气+40" / ""
         public bool highlighted;
         public float hpBonus;
         public float atkBonus;
+        public int armorBonus;
+        public int resistBonus;
         public float dmgReduction;
         public float atkSpeedBonus;
         public float critBonus;
@@ -330,15 +421,27 @@ namespace Mori.ForestSlice
 
     public sealed class HeroSpec
     {
+        static readonly float[] StarCurveAnchors = { 1.00f, 1.25f, 1.60f, 2.10f, 2.75f, 3.65f };
+
         public string id;
         public string characterId;
         public string name;
         public string roleTitle;
+        public HeroFaction faction = HeroFaction.IronGuard;
         public HeroRarity rarity = HeroRarity.Rare;
         public int level = 1;
-        public int stars = 1;
+        public int star = 0;
+        public int starPetals = 0;
+        public int shards = 0;
+        public int spentHeroExp = 0;
+        public int spentSkillBooks = 0;
         public int baseAtk = 24;
         public int baseHp = 180;
+        public int baseSkillPower = 30;
+        public int baseArmor = 50;
+        public int baseResist = 40;
+        public int rangeCells = 1;
+        public int unlockStage = 0;
         public bool isMelee;
         public string projKey = "proj_arrow";
         public string skillName = "战术突击";
@@ -353,29 +456,94 @@ namespace Mori.ForestSlice
         public string targetBuildingTitle;
         public OutfitTier skinTier = OutfitTier.Refugee;
 
+        public readonly int[] skillLevels = new int[4] { 1, 0, 0, 0 };
+        public readonly int[] equipTiers = new int[4];
+        public readonly TacticalBadgeId[] equippedBadges = new TacticalBadgeId[3];
+
+        public int attackRange
+        {
+            get => rangeCells;
+            set => rangeCells = value;
+        }
+
+        public int stars
+        {
+            get => star;
+            set => star = Mathf.Clamp(value, 0, 5);
+        }
+
+        public string ShardIconKey => "ico_shard_" + id;
+        public string FullBodyKey => "fullbody_" + id;
+
         public string RarityTag => rarity == HeroRarity.Legendary ? "传说" : (rarity == HeroRarity.Epic ? "史诗" : "稀有");
 
-        public float StarMult
+        public static float EvalStarPetalMultiplier(int s, int petals)
+        {
+            if (s >= 5) return StarCurveAnchors[5];
+            int cs = Mathf.Clamp(s, 0, 4);
+            int cp = Mathf.Clamp(petals, 0, 5);
+            return Mathf.Lerp(StarCurveAnchors[cs], StarCurveAnchors[cs + 1], cp / 5f);
+        }
+
+        public float StarMult => EvalStarPetalMultiplier(star, starPetals);
+
+        public float SkinAtkMult => skinTier == OutfitTier.Armored ? 1.25f : (skinTier == OutfitTier.Reinforced ? 1.12f : 1.0f);
+        public float SkinHpMult => skinTier == OutfitTier.Armored ? 1.35f : (skinTier == OutfitTier.Reinforced ? 1.16f : 1.0f);
+
+        public int Attack
         {
             get
             {
-                float[] m = { 1.0f, 1.0f, 1.25f, 1.55f, 1.90f, 2.35f };
-                return m[Mathf.Clamp(stars, 1, 5)];
+                int wFlat = equipTiers[0] >= 4 ? 105 : (equipTiers[0] == 3 ? 60 : (equipTiers[0] == 2 ? 32 : (equipTiers[0] == 1 ? 14 : 0)));
+                return Mathf.RoundToInt(baseAtk * (1f + 0.060f * Mathf.Max(0, level - 1)) * StarMult) + wFlat;
             }
         }
 
-        public float SkinAtkMult => skinTier == OutfitTier.Armored ? 1.40f : (skinTier == OutfitTier.Reinforced ? 1.15f : 1.0f);
-        public float SkinHpMult => skinTier == OutfitTier.Armored ? 1.75f : (skinTier == OutfitTier.Reinforced ? 1.30f : 1.0f);
+        public int MaxHp
+        {
+            get
+            {
+                int aFlat = equipTiers[1] >= 4 ? 680 : (equipTiers[1] == 3 ? 390 : (equipTiers[1] == 2 ? 210 : (equipTiers[1] == 1 ? 90 : 0)));
+                int bFlat = equipTiers[2] >= 4 ? 420 : (equipTiers[2] == 3 ? 240 : (equipTiers[2] == 2 ? 130 : (equipTiers[2] == 1 ? 55 : 0)));
+                return Mathf.RoundToInt(baseHp * (1f + 0.065f * Mathf.Max(0, level - 1)) * StarMult) + aFlat + bFlat;
+            }
+        }
 
-        public int Attack => Mathf.RoundToInt(baseAtk * (1f + 0.08f * (level - 1)) * StarMult * SkinAtkMult);
-        public int MaxHp => Mathf.RoundToInt(baseHp * (1f + 0.09f * (level - 1)) * StarMult * SkinHpMult);
-        public int CombatPower => Attack * 4 + Mathf.RoundToInt(MaxHp * 0.5f);
+        public int SkillPower
+        {
+            get
+            {
+                int wFlat = equipTiers[0] >= 4 ? 90 : (equipTiers[0] == 3 ? 52 : (equipTiers[0] == 2 ? 28 : (equipTiers[0] == 1 ? 12 : 0)));
+                int gFlat = equipTiers[3] >= 4 ? 115 : (equipTiers[3] == 3 ? 68 : (equipTiers[3] == 2 ? 36 : (equipTiers[3] == 1 ? 16 : 0)));
+                return Mathf.RoundToInt(baseSkillPower * (1f + 0.060f * Mathf.Max(0, level - 1)) * StarMult) + wFlat + gFlat;
+            }
+        }
+
+        public int CombatPower
+        {
+            get
+            {
+                int arm = baseArmor + Mathf.Max(0, level - 1) * 3;
+                int res = baseResist + Mathf.Max(0, level - 1) * 2;
+                int skillSum = 0;
+                for (int i = 0; i < 4; i++)
+                    if (star >= i) skillSum += Mathf.Max(0, skillLevels[i] - 1);
+                float basePwr = MaxHp * 0.45f + Attack * 4.2f + SkillPower * 3.6f + (arm + res) * 1.5f;
+                return Mathf.RoundToInt(basePwr * (1f + 0.08f * skillSum));
+            }
+        }
 
         public float GetDelegationScore(DelegationPostKind post)
         {
             float rBase = rarity == HeroRarity.Legendary ? 16f : (rarity == HeroRarity.Epic ? 12f : 8.5f);
             float spec = (post == prefPost1 || post == prefPost2) ? 1.28f : 1.0f;
-            return rBase * StarMult * (1f + 0.03f * (level - 1)) * spec;
+            float star2Bonus = star >= 2 ? 1.25f : 1.0f;
+            if (star >= 2 && (post == prefPost1 || post == prefPost2) &&
+                (id == "asa" || id == "qinghe" || id == "zhoudr"))
+            {
+                star2Bonus *= 1.12f;
+            }
+            return rBase * StarMult * star2Bonus * (1f + 0.025f * Mathf.Max(0, level - 1)) * spec;
         }
     }
 
@@ -531,6 +699,12 @@ namespace Mori.ForestSlice
         public bool AutoChainNextStage;
         public TacticalFormationId SelectedFormation = TacticalFormationId.StandardLine;
         public readonly int[] FormationSlots = new int[9];
+        public readonly Dictionary<TacticalBadgeId, int> OwnedBadges = new Dictionary<TacticalBadgeId, int>();
+        readonly HashSet<TacticalFormationId> _unlockedFormations = new HashSet<TacticalFormationId>();
+        public bool AutoExchangeUniversalShards = true;
+        public float PatrolAccumSec = 480f;
+        public int TotalRecruitPulls = 0;
+        public int RecruitPityCounter = 0;
         bool _gmUnlockFullSquad;
         bool _manualFormationEdited;
         public float SweepCooldownSec = 0f;
@@ -635,11 +809,19 @@ namespace Mori.ForestSlice
             }
         }
 
+        public static bool IsStrategicRes(SurvRes r)
+        {
+            return r == SurvRes.Ration || r == SurvRes.Blueprint || r == SurvRes.Parts || r == SurvRes.HeroMedal ||
+                   r == SurvRes.SeedVeggie || r == SurvRes.SeedFlax || r == SurvRes.SeedHerb || r == SurvRes.SeedGolden ||
+                   r == SurvRes.Compost ||
+                   r == SurvRes.HeroExp || r == SurvRes.RecruitTicket || r == SurvRes.SkillBook ||
+                   r == SurvRes.ShardUnivEpic || r == SurvRes.ShardUnivLeg ||
+                   r == SurvRes.ChoiceResBox || r == SurvRes.SpeedHourglass;
+        }
+
         public static bool IsWarehouseCapped(SurvRes r)
         {
-            return r != SurvRes.Ration && r != SurvRes.Blueprint && r != SurvRes.Parts && r != SurvRes.HeroMedal &&
-                   r != SurvRes.SeedVeggie && r != SurvRes.SeedFlax && r != SurvRes.SeedHerb && r != SurvRes.SeedGolden &&
-                   r != SurvRes.Compost;
+            return !IsStrategicRes(r);
         }
 
         /// <summary>① 水利滴灌联动：净水石井 Lv.2+（或石井激活且农田升至 Lv.3 铺设导流管）解锁全田垄自动滴灌 +35% 生长提速！</summary>
@@ -771,10 +953,6 @@ namespace Mori.ForestSlice
             }
             h.skinTier = targetTier;
             string resolvedBust = PuppetRegistry.ResolveBustKey(h.characterId, targetTier);
-            if (h.id == "leimeng")
-                resolvedBust = "bust_vil_0";
-            else if (h.id == "tieshu")
-                resolvedBust = "survivor_tieshu";
             h.portraitKey = resolvedBust;
             OutfitTierDef def = PuppetRegistry.GetProfile(h.characterId).GetTier(targetTier);
             string tierName = def != null ? def.tierName : targetTier.ToString();
@@ -916,8 +1094,28 @@ namespace Mori.ForestSlice
             _res[SurvRes.SeedFlax] = 2;
             _res[SurvRes.SeedHerb] = 1;
 
+            // 独立英雄养成初始体验包：英雄经验×600、招募卡×5、技能书×15、原料自选箱×2、工坊加速沙漏×2 + 先手电芯徽章×1
+            _res[SurvRes.HeroExp] = 600;
+            _res[SurvRes.RecruitTicket] = 5;
+            _res[SurvRes.SkillBook] = 15;
+            _res[SurvRes.ChoiceResBox] = 2;
+            _res[SurvRes.SpeedHourglass] = 2;
+
             _revealedRes.Add(SurvRes.Wood);
             _revealedRes.Add(SurvRes.Ration);
+            _revealedRes.Add(SurvRes.HeroExp);
+            _revealedRes.Add(SurvRes.RecruitTicket);
+            _revealedRes.Add(SurvRes.SkillBook);
+            _revealedRes.Add(SurvRes.ChoiceResBox);
+            _revealedRes.Add(SurvRes.SpeedHourglass);
+
+            foreach (TacticalBadgeId b in Enum.GetValues(typeof(TacticalBadgeId)))
+            {
+                if (b != TacticalBadgeId.None)
+                    OwnedBadges[b] = 0;
+            }
+            OwnedBadges[TacticalBadgeId.EnergyCore] = 1;
+            _unlockedFormations.Add(TacticalFormationId.StandardLine);
 
             InitNodes();
             InitFarmAndRanchSlots();
@@ -953,8 +1151,12 @@ namespace Mori.ForestSlice
             {
                 CampXp -= GetXpNeed(CampLevel);
                 CampLevel++;
-                // 每次升星保底赠送铜币，Lv.4+ 赠工程手稿，Lv.7+ 赠医疗电子件，确保纯种田玩家永不卡死！
+                // 每次升星保底赠送铜币 + 独立英雄经验与招募补给，Lv.4+ 赠工程手稿，Lv.7+ 赠医疗电子件，确保纯种田玩家永不卡死！
                 Coins += 80 * CampLevel;
+                Add(SurvRes.HeroExp, 120 + CampLevel * 65, notifyToast: false);
+                Add(SurvRes.SkillBook, 2 + CampLevel / 3, notifyToast: false);
+                if (CampLevel % 2 == 0)
+                    Add(SurvRes.RecruitTicket, 1, notifyToast: true);
                 if (CampLevel >= 4)
                 {
                     int bpRw = CampLevel >= 13 ? 7 : (CampLevel >= 9 ? 5 : 3);
@@ -970,11 +1172,11 @@ namespace Mori.ForestSlice
 
                 if (CampLevel == 2)
                 {
-                    Add(SurvRes.HeroMedal, 2, notifyToast: true);
+                    Add(SurvRes.RecruitTicket, 2, notifyToast: true);
                 }
                 else if (CampLevel == 3)
                 {
-                    Add(SurvRes.HeroMedal, 3, notifyToast: true);
+                    Add(SurvRes.ChoiceResBox, 1, notifyToast: true);
                 }
                 else if (CampLevel == 4)
                 {
@@ -986,19 +1188,19 @@ namespace Mori.ForestSlice
                 }
                 else if (CampLevel == 5)
                 {
-                    Add(SurvRes.HeroMedal, 2, notifyToast: true);
+                    Add(SurvRes.ShardUnivEpic, 3, notifyToast: true);
                 }
                 else if (CampLevel == 7 || CampLevel == 9 || CampLevel == 10)
                 {
-                    Add(SurvRes.HeroMedal, 3, notifyToast: true);
+                    Add(SurvRes.ShardUnivEpic, 4, notifyToast: true);
                 }
                 else if (CampLevel == 12)
                 {
-                    Add(SurvRes.HeroMedal, 4, notifyToast: true);
+                    Add(SurvRes.ShardUnivLeg, 4, notifyToast: true);
                 }
                 else if (CampLevel == 15)
                 {
-                    Add(SurvRes.HeroMedal, 5, notifyToast: true);
+                    Add(SurvRes.ShardUnivLeg, 8, notifyToast: true);
                 }
                 EnsureCombatSquad();
 
@@ -1013,37 +1215,45 @@ namespace Mori.ForestSlice
             UnlockHero("xiaotang", silent: true);
             if (CampLevel >= 3 || HordeWaveCleared >= 2)
                 UnlockHero("leimeng", silent);
-            if (CampLevel >= 4 || HordeWaveCleared >= 5)
-                UnlockHero("linyan", silent);
-            if (CampLevel >= 7 || HordeWaveCleared >= 9)
+            if (CampLevel >= 4 || HordeWaveCleared >= 3)
                 UnlockHero("tieshu", silent);
-            if (CampLevel >= 10 || HordeWaveCleared >= 13)
+            if (CampLevel >= 5 || HordeWaveCleared >= 5)
+                UnlockHero("linyan", silent);
+            if (CampLevel >= 8 || HordeWaveCleared >= 8)
+                UnlockHero("qinghe", silent);
+            if (CampLevel >= 10 || HordeWaveCleared >= 12)
                 UnlockHero("laochentou", silent);
+            if (CampLevel >= 13 || HordeWaveCleared >= 15)
+                UnlockHero("asa", silent);
+            if (CampLevel >= 15 || HordeWaveCleared >= 20)
+                UnlockHero("zhoudr", silent);
         }
 
         static string[] GetUnlocksForLevel(int lv)
         {
             switch (lv)
             {
-                case 2: return new[] { "净水石井", "山林畜牧栏", "山泉鲜蔬汤" };
-                case 3: return new[] { "废铁锻造坊", "裁缝防具坊", "生态农田Lv.2(3垄)" };
-                case 4: return new[] { "河畔钓鱼台", "石井Lv.2自动滴灌", "篝火供暖塔Lv.2" };
-                case 5: return new[] { "2号原木民居", "尖木拒马防线", "防潮木床铺" };
+                case 2: return new[] { "净水石井", "山林畜牧栏", "英雄上限Lv.10" };
+                case 3: return new[] { "短波招募电台", "废铁锻造坊", "裁缝防具坊" };
+                case 4: return new[] { "河畔钓鱼台", "石井Lv.2自动滴灌", "上阵扩编3人" };
+                case 5: return new[] { "2号原木民居", "尖木拒马防线", "英雄上限Lv.25" };
                 case 6: return new[] { "捕猎木哨塔", "畜牧栏Lv.2(山猪)", "防荆棘猎皮靴" };
                 case 7: return new[] { "山林草药坊", "包铁承重梁", "止血草药敷包" };
-                case 8: return new[] { "末日武装皮卡", "盘山公路关卡", "锻打铁锭·松木熏肉" };
+                case 8: return new[] { "末日武装皮卡", "盘山公路关卡", "上阵扩编4人" };
                 case 9: return new[] { "山涧发电房", "供暖塔Lv.3", "加绒御寒皮衣" };
-                case 10: return new[] { "山口行商电台", "驱寒草本热饮", "2号民居Lv.3" };
+                case 10: return new[] { "驱寒草本热饮", "2号民居Lv.3", "英雄上限Lv.50" };
                 case 11: return new[] { "3号幸存者木楼", "导流金属管", "农田Lv.3(4垄满田)" };
-                case 12: return new[] { "供暖塔Lv.4(温室+40%)", "畜牧栏Lv.3(梅花鹿)", "发电房Lv.2" };
+                case 12: return new[] { "供暖塔Lv.4(温室+40%)", "上阵满编5人", "发电房Lv.2" };
                 case 13: return new[] { "抗尸毒急救箱", "重甲皮卡Lv.2", "行商电台Lv.2" };
                 case 14: return new[] { "议事厅Lv.3末日木堡", "废土钢板护甲", "农田Lv.4满阶" };
-                case 15: return new[] { "物资仓库Lv.5(1200)", "发电房Lv.3(+65%)", "3号木楼满阶" };
+                case 15: return new[] { "物资仓库Lv.5(1200)", "发电房Lv.3(+65%)", "英雄上限Lv.75" };
                 default: return new[] { "全营地高阶等级上限开放" };
             }
         }
 
         public bool IsResRevealed(SurvRes r) => _revealedRes.Contains(r);
+
+        public static string GetResName(SurvRes r) => ResName(r);
 
         public static string ResName(SurvRes r)
         {
@@ -1084,11 +1294,69 @@ namespace Mori.ForestSlice
                 case SurvRes.SeedHerb: return "深山草药种";
                 case SurvRes.SeedGolden: return "变异黄金种";
                 case SurvRes.Compost: return "有机堆肥";
+                case SurvRes.HeroExp: return "英雄经验";
+                case SurvRes.RecruitTicket: return "电台招募卡";
+                case SurvRes.SkillBook: return "战术技能书";
+                case SurvRes.ShardUnivEpic: return "史诗万能碎片";
+                case SurvRes.ShardUnivLeg: return "传说万能碎片";
+                case SurvRes.ChoiceResBox: return "原料自选箱";
+                case SurvRes.SpeedHourglass: return "工坊加速沙漏";
                 default: return r.ToString();
             }
         }
 
+        public static string GetResIconKey(SurvRes r)
+        {
+            switch (r)
+            {
+                case SurvRes.Wood: return "ico_wood";
+                case SurvRes.Scrap: return "ico_scrap";
+                case SurvRes.Water: return "ico_water";
+                case SurvRes.Veggie: return "ico_veggie";
+                case SurvRes.Cloth: return "ico_cloth";
+                case SurvRes.Herb: return "ico_herb";
+                case SurvRes.Fish: return "ico_fish";
+                case SurvRes.Meat: return "ico_meat";
+                case SurvRes.Pelt: return "ico_pelt";
+                case SurvRes.Plank: return "ico_plank";
+                case SurvRes.WoodBed: return "ico_woodbed";
+                case SurvRes.IronBeam: return "rec_beam";
+                case SurvRes.Nails: return "ico_nails";
+                case SurvRes.IronIngot: return "ico_ingot";
+                case SurvRes.MetalPipe: return "ico_pipe";
+                case SurvRes.LinenShirt: return "ico_shirt";
+                case SurvRes.LeatherBoots: return "ico_boots";
+                case SurvRes.FurCoat: return "ico_coat";
+                case SurvRes.PlateArmor: return "ico_armor";
+                case SurvRes.RoastVeggie: return "ico_veggie";
+                case SurvRes.VeggieSoup: return "rec_stew";
+                case SurvRes.GrillFish: return "rec_roast_fish";
+                case SurvRes.SmokedMeat: return "ico_ration";
+                case SurvRes.HerbPoultice: return "ico_poultice";
+                case SurvRes.WarmTea: return "ico_tea";
+                case SurvRes.MedKit: return "ico_medkit";
+                case SurvRes.Ration: return "ico_ration";
+                case SurvRes.Parts: return "ico_parts";
+                case SurvRes.Blueprint: return "ico_blueprint";
+                case SurvRes.HeroMedal: return "ico_hero_medal";
+                case SurvRes.SeedVeggie: return "ico_seed_veggie";
+                case SurvRes.SeedFlax: return "ico_seed_flax";
+                case SurvRes.SeedHerb: return "ico_seed_herb";
+                case SurvRes.SeedGolden: return "ico_seed_golden";
+                case SurvRes.Compost: return "ico_compost";
+                case SurvRes.HeroExp: return "ico_hero_exp";
+                case SurvRes.RecruitTicket: return "ico_recruit_card";
+                case SurvRes.SkillBook: return "ico_skill_book_1";
+                case SurvRes.ShardUnivEpic: return "ico_shard_univ_epic";
+                case SurvRes.ShardUnivLeg: return "ico_shard_univ_leg";
+                case SurvRes.ChoiceResBox: return "ico_choice_crate";
+                case SurvRes.SpeedHourglass: return "ico_speed_hourglass";
+                default: return "ico_wood";
+            }
+        }
+
         public int Get(SurvRes r) => _res.TryGetValue(r, out int v) ? v : 0;
+        public int GetRes(SurvRes r) => Get(r);
 
         public void Add(SurvRes r, int delta, bool notifyToast = false)
         {
@@ -1335,8 +1603,15 @@ namespace Mori.ForestSlice
             OnDelegationChanged?.Invoke();
         }
 
-        // ---------------- 英雄升级 / 升星 / 出战小队 ----------------
-        public int MaxHeroLevelCap => Mathf.Max(5, CampLevel * 2);
+        // =====================================================================
+        // 《疯狂水世界》级英雄独立经济 · 5×5星瓣 · 四技能 · 徽章 · 4槽工坊装备 · 阵营光环
+        // =====================================================================
+        public int MaxHeroLevelCap => Mathf.Max(5, CampLevel * 5);
+
+        public int GetHeroLevelUpExpCost(int currentLevel)
+            => Mathf.RoundToInt(50f * Mathf.Pow(Mathf.Max(1, currentLevel), 1.45f));
+
+        // 保留旧版静态查询签名以保证工程零编译断链
         public static int GetHeroLevelUpCoins(int curLv) => 60 + curLv * 45;
         public static int GetHeroLevelUpRations(int curLv) => 2 + curLv / 3;
         public static int GetHeroStarUpMedals(int curStars)
@@ -1346,39 +1621,1213 @@ namespace Mori.ForestSlice
         }
 
         public bool TryLevelUpHero(string heroId, out string msg)
-        {
-            HeroSpec h = FindHero(heroId);
-            if (h == null || !h.unlocked) { msg = "该英雄尚未入队"; return false; }
-            if (h.level >= MaxHeroLevelCap) { msg = "需先提升左上角领主等级！"; return false; }
-            int cNeed = GetHeroLevelUpCoins(h.level);
-            int rNeed = GetHeroLevelUpRations(h.level);
-            if (Coins < cNeed) { msg = $"铜币不足 ({Coins}/{cNeed})，请交付居民订单获取"; return false; }
-            if (Get(SurvRes.Ration) < rNeed) { msg = $"熟食口粮不足 ({Get(SurvRes.Ration)}/{rNeed})，请在炊事房烹饪获取"; return false; }
+            => TryLevelUpHeroWithExp(FindHeroIndex(heroId), out msg);
 
-            Coins -= cNeed;
-            Add(SurvRes.Ration, -rNeed);
+        public bool TryLevelUpHero(int heroIdx, out string msg)
+            => TryLevelUpHeroWithExp(heroIdx, out msg);
+
+        public bool TryLevelUpHeroWithExp(int heroIdx, out string msg)
+        {
+            if (heroIdx < 0 || heroIdx >= Heroes.Count || !Heroes[heroIdx].unlocked)
+            {
+                msg = "该英雄尚未招募入队！";
+                return false;
+            }
+            HeroSpec h = Heroes[heroIdx];
+            if (h.level >= MaxHeroLevelCap)
+            {
+                msg = $"已达上限(Lv.{MaxHeroLevelCap})，需要提升玩家领主等级！";
+                return false;
+            }
+            int expNeed = GetHeroLevelUpExpCost(h.level);
+            int expOwn = Get(SurvRes.HeroExp);
+            if (expOwn < expNeed)
+            {
+                msg = $"英雄经验不足 ({expOwn}/{expNeed})，请前往【山口闯关】或领取【巡逻补给箱】！";
+                return false;
+            }
+
+            Add(SurvRes.HeroExp, -expNeed);
+            h.spentHeroExp += expNeed;
             h.level++;
             HeroLevelUpsTotal++;
             OnDelegationChanged?.Invoke();
             EvaluateQuestProgress();
-            msg = $"{h.name} 升至 Lv.{h.level}！战力与委任效率提升！";
+            msg = $"{h.name} 升至 Lv.{h.level}！六维战力与委任效率同步提升！";
             return true;
         }
 
-        public bool TryStarUpHero(string heroId, out string msg)
+        public bool TryResetHeroLevel(int heroIdx, out string msg)
         {
-            HeroSpec h = FindHero(heroId);
-            if (h == null || !h.unlocked) { msg = "该英雄尚未入队"; return false; }
-            if (h.stars >= 5) { msg = "已达最高 5 星满阶！"; return false; }
-            int need = GetHeroStarUpMedals(h.stars);
-            int own = Get(SurvRes.HeroMedal);
-            if (own < need) { msg = $"英雄勋章不足 ({own}/{need})，请前往【迎击】击退尸潮获取！"; return false; }
+            if (heroIdx < 0 || heroIdx >= Heroes.Count || !Heroes[heroIdx].unlocked)
+            {
+                msg = "该英雄尚未入队";
+                return false;
+            }
+            HeroSpec h = Heroes[heroIdx];
+            if (h.level <= 1 && h.spentSkillBooks <= 0 && h.spentHeroExp <= 0)
+            {
+                msg = $"{h.name} 当前为初始 1 级且未升级技能，无需重置";
+                return false;
+            }
 
-            Add(SurvRes.HeroMedal, -need);
-            h.stars++;
+            int refundExp = h.spentHeroExp;
+            if (refundExp <= 0 && h.level > 1)
+            {
+                for (int lv = 1; lv < h.level; lv++)
+                    refundExp += GetHeroLevelUpExpCost(lv);
+            }
+            int refundBooks = h.spentSkillBooks;
+
+            if (refundExp > 0)
+                Add(SurvRes.HeroExp, refundExp, notifyToast: true);
+            if (refundBooks > 0)
+                Add(SurvRes.SkillBook, refundBooks, notifyToast: true);
+
+            h.level = 1;
+            h.spentHeroExp = 0;
+            h.spentSkillBooks = 0;
+            for (int s = 0; s < 4; s++)
+                h.skillLevels[s] = h.star >= s ? 1 : 0;
+
+            bool unequippedAnyBadge = false;
+            for (int b = 0; b < h.equippedBadges.Length; b++)
+            {
+                if (h.equippedBadges[b] != TacticalBadgeId.None)
+                {
+                    h.equippedBadges[b] = TacticalBadgeId.None;
+                    unequippedAnyBadge = true;
+                }
+            }
+
             OnDelegationChanged?.Invoke();
-            msg = $"★ 升星成功！{h.name} 晋升为 {h.stars}星，委任与大招倍率暴涨！";
+            string bookPart = refundBooks > 0 ? $" · 技能书+{refundBooks}" : "";
+            string badgePart = unequippedAnyBadge ? "（佩戴徽章已卸回空闲池，请记得重新装配！）" : "（若需调整徽章可前往徽章页装配）";
+            msg = $"{h.name} 无损重置回 Lv.1！返还英雄经验+{refundExp}{bookPart} {badgePart}";
             return true;
+        }
+
+        static readonly int[][] StarPetalShardCosts =
+        {
+            new[] { 2, 2, 2, 2, 2 },       // 0★ -> 1★ (累计10)
+            new[] { 4, 4, 6, 6, 8 },       // 1★ -> 2★ (累计28)
+            new[] { 10, 12, 14, 16, 18 },  // 2★ -> 3★ (累计70)
+            new[] { 22, 24, 26, 28, 30 },  // 3★ -> 4★ (累计130)
+            new[] { 35, 40, 45, 50, 60 },  // 4★ -> 5★ (累计230)
+        };
+
+        public float GetHeroStarMultiplier(int star, int petals)
+            => HeroSpec.EvalStarPetalMultiplier(star, petals);
+
+        public int GetNextPetalShardCost(int heroIdx)
+        {
+            if (heroIdx < 0 || heroIdx >= Heroes.Count) return 0;
+            HeroSpec h = Heroes[heroIdx];
+            if (h.star >= 5) return 0;
+            int s = Mathf.Clamp(h.star, 0, 4);
+            int p = Mathf.Clamp(h.starPetals, 0, 4);
+            return StarPetalShardCosts[s][p];
+        }
+
+        public SurvRes GetUniversalShardResFor(HeroRarity rarity)
+            => rarity == HeroRarity.Legendary ? SurvRes.ShardUnivLeg : SurvRes.ShardUnivEpic;
+
+        public int GetAvailableUniversalShardsFor(int heroIdx)
+        {
+            if (heroIdx < 0 || heroIdx >= Heroes.Count) return 0;
+            return Get(GetUniversalShardResFor(Heroes[heroIdx].rarity));
+        }
+
+        public bool TryRecruitHeroWithShards(int heroIdx, out string msg)
+        {
+            if (heroIdx < 0 || heroIdx >= Heroes.Count)
+            {
+                msg = "无效的英雄索引";
+                return false;
+            }
+            HeroSpec h = Heroes[heroIdx];
+            if (h.unlocked)
+            {
+                msg = $"【{h.name}】已在队伍中，可使用碎片继续升星！";
+                return false;
+            }
+            if (h.shards < 10)
+            {
+                msg = $"【{h.name}碎片】不足 ({h.shards}/10)，前往广播电台招募或闯关获取！";
+                return false;
+            }
+
+            h.shards -= 10;
+            h.skillLevels[0] = Mathf.Max(1, h.skillLevels[0]);
+            UnlockHero(h.id, silent: false);
+            AutoAssignHeroes();
+            msg = $"★ 合成招募成功！【{h.name}】正式入列！";
+            return true;
+        }
+
+        public bool TryExchangeUniversalShards(int heroIdx, int count, out string msg)
+        {
+            if (heroIdx < 0 || heroIdx >= Heroes.Count || count <= 0)
+            {
+                msg = "请选择有效的兑换数量";
+                return false;
+            }
+            HeroSpec h = Heroes[heroIdx];
+            SurvRes uRes = GetUniversalShardResFor(h.rarity);
+            int have = Get(uRes);
+            if (have <= 0)
+            {
+                msg = $"背包内暂无【{ResName(uRes)}】";
+                return false;
+            }
+            int actual = Mathf.Min(count, have);
+            Add(uRes, -actual);
+            h.shards += actual;
+            msg = $"成功将 {actual} 枚【{ResName(uRes)}】1:1 兑换为【{h.name}碎片×{actual}】！";
+            return true;
+        }
+
+        public bool TryAdvanceHeroStarPetal(int heroIdx, bool allowAutoUniversal, out bool crossedFullStar, out string msg)
+        {
+            crossedFullStar = false;
+            if (heroIdx < 0 || heroIdx >= Heroes.Count)
+            {
+                msg = "无效的英雄索引";
+                return false;
+            }
+            HeroSpec h = Heroes[heroIdx];
+            if (!h.unlocked)
+                return TryRecruitHeroWithShards(heroIdx, out msg);
+
+            if (h.star >= 5)
+            {
+                msg = $"【{h.name}】已达最高 5★ 觉醒满星！";
+                return false;
+            }
+
+            int cost = GetNextPetalShardCost(heroIdx);
+            int missing = cost - h.shards;
+            int autoUsedUniv = 0;
+            if (missing > 0)
+            {
+                SurvRes uRes = GetUniversalShardResFor(h.rarity);
+                int availUniv = Get(uRes);
+                if (allowAutoUniversal && availUniv >= missing)
+                {
+                    Add(uRes, -missing);
+                    h.shards += missing;
+                    autoUsedUniv = missing;
+                }
+                else
+                {
+                    msg = availUniv >= missing
+                        ? $"【{h.name}碎片】不足 ({h.shards}/{cost})，请开启[自动兑换]或点击兑换【{ResName(uRes)}】！"
+                        : $"【{h.name}碎片】不足 ({h.shards}/{cost})，前往【广播电台】招募或闯关获取！";
+                    return false;
+                }
+            }
+
+            h.shards -= cost;
+            h.starPetals++;
+            if (h.starPetals >= 5)
+            {
+                h.starPetals = 0;
+                h.star = Mathf.Clamp(h.star + 1, 0, 5);
+                crossedFullStar = true;
+                if (h.star >= 1) h.skillLevels[1] = Mathf.Max(1, h.skillLevels[1]);
+                if (h.star >= 2) h.skillLevels[2] = Mathf.Max(1, h.skillLevels[2]);
+                if (h.star >= 3) h.skillLevels[3] = Mathf.Max(1, h.skillLevels[3]);
+            }
+
+            OnDelegationChanged?.Invoke();
+            string univHint = autoUsedUniv > 0 ? $"（自动补齐万能碎片×{autoUsedUniv}）" : "";
+            if (crossedFullStar)
+            {
+                string unlockMilestone = h.star == 1 ? "解锁第2技能 + 第1徽章槽！"
+                    : (h.star == 2 ? "解锁第3技能 + 委任效率+25%！"
+                    : (h.star == 3 ? "解锁第4核心质变技能 + 第2徽章槽！"
+                    : (h.star == 4 ? "全技能上限突破至 Lv.5！" : "解锁第3徽章槽 · 满星觉醒！")));
+                msg = $"★ 整星突破！{h.name} 晋升为 {h.star}★！{unlockMilestone}{univHint}";
+            }
+            else
+            {
+                msg = $"★ 星瓣点亮！{h.name} 升至 {h.star}★ · {h.starPetals}/5瓣，三维属性跳涨！{univHint}";
+            }
+            return true;
+        }
+
+        public bool TryStarUpHero(int heroIdx, out string msg)
+            => TryAdvanceHeroStarPetal(heroIdx, AutoExchangeUniversalShards, out _, out msg);
+
+        public bool TryStarUpHero(string heroId, out string msg)
+            => TryAdvanceHeroStarPetal(FindHeroIndex(heroId), AutoExchangeUniversalShards, out _, out msg);
+
+        // ---------------- 4 圆章技能定义与战术技能书升级 ----------------
+        static readonly int[] SkillBookCostsByLv = { 10, 20, 35, 55 };
+
+        public HeroSkillDef GetHeroSkillDef(int heroIdx, int skillSlot0to3)
+        {
+            int slot = Mathf.Clamp(skillSlot0to3, 0, 3);
+            HeroSpec h = (heroIdx >= 0 && heroIdx < Heroes.Count) ? Heroes[heroIdx] : null;
+            string hid = h != null ? h.id : "dachui";
+            int unlockStarReq = slot; // 0, 1, 2, 3
+            bool unlocked = h != null && h.star >= unlockStarReq;
+            int curLv = 0;
+            if (unlocked)
+            {
+                curLv = Mathf.Clamp(Mathf.Max(1, h.skillLevels[slot]), 1, 5);
+                h.skillLevels[slot] = curLv;
+            }
+            int dispTierIdx = Mathf.Clamp(curLv > 0 ? curLv - 1 : 0, 0, 4);
+
+            string sName = "战术绝技";
+            string sIcon = "ww_skill_shield";
+            string metric = "技能效果";
+            string[] tiers = { "100%", "120%", "140%", "160%", "180%" };
+            string descTemplate = "造成 <color=#22B24C>{0}</color> 技能伤害。";
+
+            switch (hid)
+            {
+                case "dachui":
+                    if (slot == 0)
+                    {
+                        sName = "路牌重盾震击"; sIcon = "ww_skill_shield"; metric = "护盾与震击倍率";
+                        tiers = new[] { "220%", "250%", "285%", "320%", "360%" };
+                        descTemplate = "展开吸收 <color=#22B24C>{0}</color> 技能强度的路牌重盾并嘲讽周围敌人，重锤猛砸造成范围<color=#E86A1C>物理伤害</color>。";
+                    }
+                    else if (slot == 1)
+                    {
+                        sName = "钢筋铁骨"; sIcon = "ww_passive_heart"; metric = "最大生命加成";
+                        tiers = new[] { "12%", "18%", "24%", "30%", "36%" };
+                        descTemplate = "前排重卫强健体魄，永久提高自身最大生命 <color=#22B24C>{0}</color>，并额外增加 <color=#22B24C>+80</color> 点物理护甲。";
+                    }
+                    else if (slot == 2)
+                    {
+                        sName = "焊甲反震"; sIcon = "ww_skill_shield"; metric = "护盾减伤比例";
+                        tiers = new[] { "20%", "24%", "28%", "32%", "36%" };
+                        descTemplate = "护盾持续期间受到伤害降低 <color=#22B24C>{0}</color>，并对近战撕咬目标反弹<color=#E86A1C>物理伤害</color>。";
+                    }
+                    else
+                    {
+                        sName = "【重盾震击】增强"; sIcon = "ww_passive_fury"; metric = "二次震晕时长";
+                        tiers = new[] { "1.5秒", "1.7秒", "1.9秒", "2.2秒", "2.5秒" };
+                        descTemplate = "护盾结束或被击破时引发二次震波，眩晕周围敌人 <color=#22B24C>{0}</color> 并造成震荡<color=#E86A1C>物理伤害</color>！";
+                    }
+                    break;
+
+                case "xiaotang":
+                    if (slot == 0)
+                    {
+                        sName = "高爆燃烧瓶"; sIcon = "ww_skill_fire"; metric = "火海总伤倍率";
+                        tiers = new[] { "280%", "315%", "350%", "390%", "440%" };
+                        descTemplate = "在敌群脚下铺设 3.5秒 烈焰火海，共造成 <color=#22B24C>{0}</color> 技能强度的范围<color=#E86A1C>火焰元素伤害</color>。";
+                    }
+                    else if (slot == 1)
+                    {
+                        sName = "高能燃料"; sIcon = "ww_passive_sword"; metric = "技能强度加成";
+                        tiers = new[] { "12%", "18%", "24%", "30%", "36%" };
+                        descTemplate = "改良高燃度汽油配比，永久提高自身技能强度 <color=#22B24C>{0}</color>。";
+                    }
+                    else if (slot == 2)
+                    {
+                        sName = "熔甲灼烧"; sIcon = "ww_skill_fire"; metric = "双防削弱比例";
+                        tiers = new[] { "20%", "24%", "28%", "32%", "36%" };
+                        descTemplate = "烈焰火海内的敌人护甲与抗性降低 <color=#22B24C>{0}</color>，克制重甲安全帽尸卫。";
+                    }
+                    else
+                    {
+                        sName = "【燃烧瓶】增强"; sIcon = "ww_passive_fury"; metric = "二次爆轰倍率";
+                        tiers = new[] { "120%", "140%", "160%", "185%", "215%" };
+                        descTemplate = "烈焰火海结束时触发二次连环爆轰，对范围内灼烧目标额外造成 <color=#22B24C>{0}</color> 技能强度的<color=#E86A1C>元素伤害</color>！";
+                    }
+                    break;
+
+                case "leimeng":
+                    if (slot == 0)
+                    {
+                        sName = "狂风破障斩"; sIcon = "ww_skill_cleave"; metric = "旋风重斧倍率";
+                        tiers = new[] { "260%", "295%", "330%", "370%", "420%" };
+                        descTemplate = "挥动消防重斧旋风横扫，造成 <color=#22B24C>{0}</color> 技能强度的范围<color=#E86A1C>物理伤害</color>并击退敌人。";
+                    }
+                    else if (slot == 1)
+                    {
+                        sName = "破障体魄"; sIcon = "ww_passive_sword"; metric = "攻击与生命加成";
+                        tiers = new[] { "10%", "15%", "20%", "25%", "30%" };
+                        descTemplate = "消防攻坚百战淬炼，永久提高自身攻击力与最大生命 <color=#22B24C>{0}</color>。";
+                    }
+                    else if (slot == 2)
+                    {
+                        sName = "撕裂伤口"; sIcon = "ww_skill_cleave"; metric = "顺劈流血伤害";
+                        tiers = new[] { "35%", "45%", "55%", "65%", "80%" };
+                        descTemplate = "普攻每第 3 次挥斧触发宽幅顺劈前方尸群，并附加 <color=#22B24C>{0}</color> 流血<color=#E86A1C>物理伤害</color>。";
+                    }
+                    else
+                    {
+                        sName = "【破障斩】增强"; sIcon = "ww_passive_fury"; metric = "命中已损回血";
+                        tiers = new[] { "8%", "10%", "12%", "14%", "16%" };
+                        descTemplate = "绝技每命中 1 名敌人恢复自身 <color=#22B24C>{0}</color> 已损生命，并叠加 +6% 攻击速度（最多5层）！";
+                    }
+                    break;
+
+                case "linyan":
+                    if (slot == 0)
+                    {
+                        sName = "贯日散射箭雨"; sIcon = "ww_skill_arrow"; metric = "箭雨总伤倍率";
+                        tiers = new[] { "300%", "340%", "385%", "435%", "490%" };
+                        descTemplate = "向敌阵倾泻 6 波穿云连弩箭，总计造成 <color=#22B24C>{0}</color> 技能强度的贯穿<color=#E86A1C>物理伤害</color>。";
+                    }
+                    else if (slot == 1)
+                    {
+                        sName = "疾风连矢"; sIcon = "ww_passive_sword"; metric = "攻击力加成";
+                        tiers = new[] { "12%", "17%", "22%", "27%", "32%" };
+                        descTemplate = "山林游猎高速机括，永久提高自身攻击力 <color=#22B24C>{0}</color> 与暴击率 <color=#22B24C>+8%</color>。";
+                    }
+                    else if (slot == 2)
+                    {
+                        sName = "弱点洞悉"; sIcon = "ww_skill_arrow"; metric = "穿透二段伤害";
+                        tiers = new[] { "65%", "75%", "85%", "95%", "110%" };
+                        descTemplate = "普攻触发暴击时弩箭直线穿透目标，对后方敌人造成 <color=#22B24C>{0}</color> <color=#E86A1C>物理伤害</color>。";
+                    }
+                    else
+                    {
+                        sName = "【散射箭雨】增强"; sIcon = "ww_passive_fury"; metric = "每次绝技加攻";
+                        tiers = new[] { "6%", "8%", "10%", "12%", "15%" };
+                        descTemplate = "每次释放绝技后，整场战斗永久叠加暴击率 +5% 与攻击力 <color=#22B24C>{0}</color>！";
+                    }
+                    break;
+
+                case "tieshu":
+                    if (slot == 0)
+                    {
+                        sName = "双管高爆霰弹"; sIcon = "ww_skill_shotgun"; metric = "高爆霰弹倍率";
+                        tiers = new[] { "230%", "260%", "295%", "335%", "380%" };
+                        descTemplate = "扇形倾泻高爆铁砂弹，造成 <color=#22B24C>{0}</color> 技能强度的<color=#E86A1C>物理伤害</color>并强力击退逼近尸潮。";
+                    }
+                    else if (slot == 1)
+                    {
+                        sName = "重装火药"; sIcon = "ww_passive_sword"; metric = "攻击力加成";
+                        tiers = new[] { "10%", "15%", "20%", "25%", "30%" };
+                        descTemplate = "军工火药增压填装，永久提高自身攻击力 <color=#22B24C>{0}</color>，并增加 <color=#22B24C>+60</color> 点护甲。";
+                    }
+                    else if (slot == 2)
+                    {
+                        sName = "压制装填"; sIcon = "ww_skill_shotgun"; metric = "双发速射倍率";
+                        tiers = new[] { "70%", "82%", "95%", "110%", "125%" };
+                        descTemplate = "每第 4 次普攻触发双管连发速射并击退近身敌人，附带 <color=#22B24C>{0}</color> 伤害。";
+                    }
+                    else
+                    {
+                        sName = "【高爆霰弹】增强"; sIcon = "ww_passive_fury"; metric = "贴脸暴伤加成";
+                        tiers = new[] { "45%", "55%", "68%", "82%", "100%" };
+                        descTemplate = "对逼近中前排的近身敌人，暴击伤害大幅提高 <color=#22B24C>{0}</color>！";
+                    }
+                    break;
+
+                case "qinghe":
+                    if (slot == 0)
+                    {
+                        sName = "霜寒捕兽夹阵"; sIcon = "ww_skill_arrow"; metric = "寒霜冻结倍率";
+                        tiers = new[] { "190%", "220%", "250%", "280%", "310%" };
+                        descTemplate = "向密集尸群投掷液氮寒霜瓶，造成 <color=#22B24C>{0}</color> 技能强度的范围<color=#E86A1C>寒霜元素伤害</color>并强控冻结 <color=#22B24C>2.0秒</color>。";
+                    }
+                    else if (slot == 1)
+                    {
+                        sName = "寒林屏息"; sIcon = "ww_passive_heart"; metric = "技强与抗性加成";
+                        tiers = new[] { "12%", "17%", "22%", "27%", "32%" };
+                        descTemplate = "雪山潜猎屏息凝神，永久提高自身技能强度与元素抗性 <color=#22B24C>{0}</color>。";
+                    }
+                    else if (slot == 2)
+                    {
+                        sName = "霜冻迟缓"; sIcon = "ww_skill_arrow"; metric = "减速减攻速比例";
+                        tiers = new[] { "25%", "28%", "31%", "35%", "40%" };
+                        descTemplate = "普攻淬霜冰矢令目标移速与攻速降低 <color=#22B24C>{0}</color>（持续2.8秒），且驻守农牧采收额外提速。";
+                    }
+                    else
+                    {
+                        sName = "【寒霜瓶】增强"; sIcon = "ww_passive_fury"; metric = "全队碎冰易伤";
+                        tiers = new[] { "22%", "25%", "28%", "31%", "34%" };
+                        descTemplate = "对处于冻结或霜冻减速状态的敌人，全队伤害提高 <color=#22B24C>{0}</color>！";
+                    }
+                    break;
+
+                case "asa":
+                    if (slot == 0)
+                    {
+                        sName = "飞爪夺命钩"; sIcon = "ww_skill_cleave"; metric = "夺命重劈倍率";
+                        tiers = new[] { "240%", "275%", "310%", "345%", "380%" };
+                        descTemplate = "甩出改装绞盘铁钩将敌方最远后排强行拉拽至身前重劈，造成 <color=#22B24C>{0}</color> 技能强度的<color=#E86A1C>物理伤害</color>。";
+                    }
+                    else if (slot == 1)
+                    {
+                        sName = "猎杀本能"; sIcon = "ww_passive_sword"; metric = "暴击与攻击加成";
+                        tiers = new[] { "8%/8%", "11%/12%", "14%/16%", "17%/20%", "20%/24%" };
+                        descTemplate = "荒野悬赏敏锐猎觉，永久提高暴击率与攻击力 <color=#22B24C>{0}</color>。";
+                    }
+                    else if (slot == 2)
+                    {
+                        sName = "孤狼猎手"; sIcon = "ww_skill_cleave"; metric = "击杀回复怒气";
+                        tiers = new[] { "35点", "40点", "45点", "50点", "55点" };
+                        descTemplate = "击败任意目标立即恢复自身 <color=#22B24C>{0}</color> 怒气，且远征皮卡与哨塔委任效率额外提升。";
+                    }
+                    else
+                    {
+                        sName = "【夺命钩】增强"; sIcon = "ww_passive_fury"; metric = "破甲眩晕强化";
+                        tiers = new[] { "35%", "40%", "45%", "50%", "55%" };
+                        descTemplate = "被拉拽目标物理护甲降低 <color=#22B24C>{0}</color>（持续5秒），并陷入眩晕沉默 <color=#22B24C>2.2秒</color>！";
+                    }
+                    break;
+
+                case "zhoudr":
+                    if (slot == 0)
+                    {
+                        sName = "超载电磁风暴"; sIcon = "ww_skill_fire"; metric = "单次电弧倍率";
+                        tiers = new[] { "115%", "132%", "150%", "168%", "185%" };
+                        descTemplate = "召唤高压电弧在敌群间连锁弹射 8 次，每次造成 <color=#22B24C>{0}</color> 技能强度的<color=#E86A1C>元素伤害</color>并麻痹打断。";
+                    }
+                    else if (slot == 1)
+                    {
+                        sName = "高压线圈"; sIcon = "ww_passive_sword"; metric = "技强与暴击加成";
+                        tiers = new[] { "12%/6%", "17%/9%", "22%/12%", "27%/15%", "32%/18%" };
+                        descTemplate = "背包高压电容持续增压，永久提高技能强度与暴击率 <color=#22B24C>{0}</color>。";
+                    }
+                    else if (slot == 2)
+                    {
+                        sName = "静电场域"; sIcon = "ww_skill_shield"; metric = "科工开场护盾";
+                        tiers = new[] { "15%", "18%", "21%", "24%", "27%" };
+                        descTemplate = "开场为全体上阵【废土科工】英雄提供 <color=#22B24C>{0}</color> 最大生命护盾，且工坊生产委任额外提速。";
+                    }
+                    else
+                    {
+                        sName = "【电磁风暴】增强"; sIcon = "ww_passive_fury"; metric = "同目标递增增伤";
+                        tiers = new[] { "15%", "18%", "21%", "24%", "28%" };
+                        descTemplate = "电弧命中同一目标时伤害递增 <color=#22B24C>{0}</color>，若击败目标则额外弹射 <color=#22B24C>2次</color>！";
+                    }
+                    break;
+
+                default: // laochentou
+                    if (slot == 0)
+                    {
+                        sName = "战地急救热汤"; sIcon = "ww_skill_heal"; metric = "全队恢复倍率";
+                        tiers = new[] { "160%", "185%", "210%", "240%", "275%" };
+                        descTemplate = "为全队恢复 <color=#22B24C>{0}</color> 技能强度的<color=#22B24C>生命值</color>，并施加持续 4秒 的草本护盾。";
+                    }
+                    else if (slot == 1)
+                    {
+                        sName = "药膳滋补"; sIcon = "ww_passive_heart"; metric = "技强与生命加成";
+                        tiers = new[] { "10%", "15%", "20%", "25%", "30%" };
+                        descTemplate = "深山百草温补秘方，永久提高自身技能强度与最大生命 <color=#22B24C>{0}</color>。";
+                    }
+                    else if (slot == 2)
+                    {
+                        sName = "振奋浓香"; sIcon = "ww_skill_heal"; metric = "主C攻速增益";
+                        tiers = new[] { "18%", "22%", "26%", "30%", "36%" };
+                        descTemplate = "开场及每 9秒 为全队攻击力最高的友军提升 <color=#22B24C>{0}</color> 攻击速度。";
+                    }
+                    else
+                    {
+                        sName = "【急救热汤】增强"; sIcon = "ww_passive_fury"; metric = "全队额外回怒";
+                        tiers = new[] { "20点", "24点", "28点", "32点", "40点" };
+                        descTemplate = "全队获得热汤治疗时，额外恢复 <color=#22B24C>{0}</color> 怒气并提升 +15% 元素抗性！";
+                    }
+                    break;
+            }
+
+            int reqNextStars = !unlocked ? unlockStarReq : (curLv < 5 ? Mathf.Max(unlockStarReq, curLv) : 5);
+            int nextBookCost = !unlocked ? SkillBookCostsByLv[0] : (curLv < 5 ? SkillBookCostsByLv[Mathf.Clamp(curLv - 1, 0, 3)] : 0);
+
+            return new HeroSkillDef
+            {
+                slotIndex = slot,
+                name = sName,
+                iconKey = sIcon,
+                unlockStars = unlockStarReq,
+                currentLv = curLv,
+                maxLv = 5,
+                reqStarsForNextLv = reqNextStars,
+                bookCostNext = nextBookCost,
+                isUnlocked = unlocked,
+                descFormatted = string.Format(descTemplate, tiers[dispTierIdx]),
+                metricLabel = metric,
+                tierValues = tiers,
+            };
+        }
+
+        public bool TryUpgradeHeroSkill(int heroIdx, int skillSlot0to3, out string msg)
+        {
+            if (heroIdx < 0 || heroIdx >= Heroes.Count || !Heroes[heroIdx].unlocked)
+            {
+                msg = "该英雄尚未入队";
+                return false;
+            }
+            HeroSpec h = Heroes[heroIdx];
+            HeroSkillDef def = GetHeroSkillDef(heroIdx, skillSlot0to3);
+            if (!def.isUnlocked)
+            {
+                msg = $"英雄升星到 {def.unlockStars}★ 可解锁【{def.name}】！";
+                return false;
+            }
+            if (def.currentLv >= def.maxLv)
+            {
+                msg = $"【{def.name}】已达最高等级 Lv.{def.maxLv}！";
+                return false;
+            }
+            if (h.star < def.reqStarsForNextLv)
+            {
+                msg = $"英雄升星到 {def.reqStarsForNextLv}★ 才可继续升级【{def.name}】！";
+                return false;
+            }
+            int haveBooks = GetRes(SurvRes.SkillBook);
+            if (haveBooks < def.bookCostNext)
+            {
+                msg = $"战术技能书不足 ({haveBooks}/{def.bookCostNext})，可通过山口闯关、巡逻箱或行商获取！";
+                return false;
+            }
+
+            Add(SurvRes.SkillBook, -def.bookCostNext);
+            h.spentSkillBooks += def.bookCostNext;
+            h.skillLevels[def.slotIndex] = Mathf.Clamp(def.currentLv + 1, 1, def.maxLv);
+            OnDelegationChanged?.Invoke();
+            msg = $"★ 技能升级成功！【{def.name}】提升至 Lv.{h.skillLevels[def.slotIndex]}！";
+            return true;
+        }
+
+        // ---------------- 战术徽章系统（6大徽章 · 1★/3★/5★ 三槽装配） ----------------
+        public void AddBadge(TacticalBadgeId b, int delta = 1)
+        {
+            if (b == TacticalBadgeId.None || delta == 0) return;
+            int cur = GetOwnedBadgeCount(b);
+            OwnedBadges[b] = Mathf.Max(0, cur + delta);
+        }
+
+        public static string GetBadgeName(TacticalBadgeId b)
+        {
+            switch (b)
+            {
+                case TacticalBadgeId.EnergyCore: return "先手电芯徽章";
+                case TacticalBadgeId.ThornShield: return "路障荆棘徽章";
+                case TacticalBadgeId.EagleScope: return "鹰眼狙击徽章";
+                case TacticalBadgeId.PyroPowder: return "高爆火药徽章";
+                case TacticalBadgeId.BloodFury: return "狂战士血怒徽章";
+                case TacticalBadgeId.MedicCross: return "白衣圣手徽章";
+                default: return "未装配";
+            }
+        }
+
+        public static string GetBadgeIconKey(TacticalBadgeId b)
+        {
+            switch (b)
+            {
+                case TacticalBadgeId.EnergyCore: return "ico_badge_energy";
+                case TacticalBadgeId.ThornShield: return "ico_badge_thorn";
+                case TacticalBadgeId.EagleScope: return "ico_badge_eagle";
+                case TacticalBadgeId.PyroPowder: return "ico_badge_pyro";
+                case TacticalBadgeId.BloodFury: return "ico_badge_berserk";
+                case TacticalBadgeId.MedicCross: return "ico_badge_medic";
+                default: return "";
+            }
+        }
+
+        public static string GetBadgeDesc(TacticalBadgeId b)
+        {
+            switch (b)
+            {
+                case TacticalBadgeId.EnergyCore: return "开场怒气 +40，技能强度 +10%";
+                case TacticalBadgeId.ThornShield: return "物理护甲 +120，受到近战攻击反伤 22%";
+                case TacticalBadgeId.EagleScope: return "暴击率 +15%，攻击力 +12%";
+                case TacticalBadgeId.PyroPowder: return "技能强度 +22%，元素/范围伤害 +18%";
+                case TacticalBadgeId.BloodFury: return "生命<50%时攻速 +30%，普攻吸血 12%";
+                case TacticalBadgeId.MedicCross: return "治疗与护盾量 +28%，元素抗性 +90";
+                default: return "装配战地徽章可赋予英雄强力战斗被动";
+            }
+        }
+
+        public static int GetBadgeRarity0To5(TacticalBadgeId b)
+        {
+            switch (b)
+            {
+                case TacticalBadgeId.EnergyCore:
+                case TacticalBadgeId.PyroPowder:
+                    return 4; // 橙品
+                case TacticalBadgeId.ThornShield:
+                case TacticalBadgeId.EagleScope:
+                case TacticalBadgeId.MedicCross:
+                    return 3; // 紫品
+                case TacticalBadgeId.BloodFury:
+                    return 2; // 蓝品
+                default:
+                    return 0;
+            }
+        }
+
+        public int GetOwnedBadgeCount(TacticalBadgeId b)
+        {
+            if (b == TacticalBadgeId.None) return 0;
+            return OwnedBadges.TryGetValue(b, out int c) ? Mathf.Max(0, c) : 0;
+        }
+
+        public int GetFreeBadgeCount(TacticalBadgeId b)
+        {
+            if (b == TacticalBadgeId.None) return 0;
+            int owned = GetOwnedBadgeCount(b);
+            int used = 0;
+            for (int i = 0; i < Heroes.Count; i++)
+            {
+                HeroSpec h = Heroes[i];
+                for (int s = 0; s < h.equippedBadges.Length; s++)
+                    if (h.equippedBadges[s] == b) used++;
+            }
+            return Mathf.Max(0, owned - used);
+        }
+
+        public bool IsBadgeSlotUnlocked(HeroSpec h, int badgeSlot0to2)
+        {
+            if (h == null) return false;
+            if (badgeSlot0to2 == 0) return h.star >= 1;
+            if (badgeSlot0to2 == 1) return h.star >= 3;
+            if (badgeSlot0to2 == 2) return h.star >= 5;
+            return false;
+        }
+
+        public bool TryEquipHeroBadge(int heroIdx, int badgeSlot0to2, TacticalBadgeId badge, out string msg)
+        {
+            if (heroIdx < 0 || heroIdx >= Heroes.Count || !Heroes[heroIdx].unlocked)
+            {
+                msg = "该英雄尚未入队";
+                return false;
+            }
+            if (badgeSlot0to2 < 0 || badgeSlot0to2 >= 3)
+            {
+                msg = "无效的徽章槽位";
+                return false;
+            }
+            HeroSpec h = Heroes[heroIdx];
+
+            if (badge == TacticalBadgeId.None)
+            {
+                TacticalBadgeId prev = h.equippedBadges[badgeSlot0to2];
+                if (prev == TacticalBadgeId.None)
+                {
+                    msg = "该槽位未佩戴徽章";
+                    return false;
+                }
+                h.equippedBadges[badgeSlot0to2] = TacticalBadgeId.None;
+                msg = $"已卸下【{GetBadgeName(prev)}】";
+                return true;
+            }
+
+            if (!IsBadgeSlotUnlocked(h, badgeSlot0to2))
+            {
+                int reqStar = badgeSlot0to2 == 0 ? 1 : (badgeSlot0to2 == 1 ? 3 : 5);
+                msg = $"第 {badgeSlot0to2 + 1} 徽章槽需英雄升至 {reqStar}★ 解锁！";
+                return false;
+            }
+
+            if (h.equippedBadges[badgeSlot0to2] == badge)
+            {
+                msg = $"已装配【{GetBadgeName(badge)}】";
+                return true;
+            }
+
+            // 同一英雄不重复佩戴两枚完全相同类型的徽章；若已在自身其他槽位则直接挪槽
+            for (int s = 0; s < 3; s++)
+            {
+                if (s != badgeSlot0to2 && h.equippedBadges[s] == badge)
+                {
+                    h.equippedBadges[s] = h.equippedBadges[badgeSlot0to2];
+                    h.equippedBadges[badgeSlot0to2] = badge;
+                    msg = $"已将【{GetBadgeName(badge)}】移至第 {badgeSlot0to2 + 1} 槽！";
+                    return true;
+                }
+            }
+
+            if (GetFreeBadgeCount(badge) <= 0)
+            {
+                msg = GetOwnedBadgeCount(badge) > 0
+                    ? $"【{GetBadgeName(badge)}】已全部被其他英雄佩戴，请先卸下或获取更多！"
+                    : $"尚未获得【{GetBadgeName(badge)}】（首领关首通/奖励箱掉落）";
+                return false;
+            }
+
+            h.equippedBadges[badgeSlot0to2] = badge;
+            msg = $"{h.name} 已装配【{GetBadgeName(badge)}】！";
+            return true;
+        }
+
+        // ---------------- 4 部位工坊战备打造与升阶（锻造坊 + 裁缝坊联动） ----------------
+        static readonly string[][] EquipTierNames =
+        {
+            new[] { "未穿戴武器", "铆接战备武器", "锻钢强化武器", "合金破甲重武", "裂谷大师专武" },
+            new[] { "未穿戴护甲", "耐磨麻布工衣", "防刺铆钉皮衣", "加绒御寒皮甲", "废土复合钢甲" },
+            new[] { "未穿戴战靴", "绑腿草编靴", "防荆棘猎皮靴", "铁掌行军战靴", "液压突击重靴" },
+            new[] { "未穿戴战术镜", "防尘风镜", "裂片瞄准护目镜", "红外测距战术镜", "神经辅助战术仪" },
+        };
+
+        static readonly int[] EquipWeaponAtk = { 0, 14, 32, 60, 105 };
+        static readonly int[] EquipWeaponSp = { 0, 12, 28, 52, 90 };
+        static readonly int[] EquipArmorHp = { 0, 90, 210, 390, 680 };
+        static readonly int[] EquipArmorDef = { 0, 35, 75, 135, 220 };
+        static readonly int[] EquipBootsHp = { 0, 55, 130, 240, 420 };
+        static readonly int[] EquipBootsRes = { 0, 30, 68, 120, 195 };
+        static readonly int[] EquipGogglesSp = { 0, 16, 36, 68, 115 };
+        static readonly float[] EquipGogglesCrit = { 0f, 0.03f, 0.06f, 0.10f, 0.15f };
+
+        static string GetHeroWeaponFlavorName(string heroId, int tier)
+        {
+            int t = Mathf.Clamp(tier, 0, 4);
+            if (t == 0) return EquipTierNames[0][0];
+            switch (heroId)
+            {
+                case "dachui":
+                    return new[] { "", "铆接路牌锤盾", "锻钢防暴重盾", "合金震荡重锤", "裂谷泰坦巨盾" }[t];
+                case "xiaotang":
+                    return new[] { "", "改装高燃火瓶", "增压铝热火罐", "高爆凝固汽油箱", "裂谷炼狱爆破器" }[t];
+                case "leimeng":
+                    return new[] { "", "加固消防手斧", "锻钢破障战斧", "合金旋风巨斧", "裂谷狂澜斩首斧" }[t];
+                case "linyan":
+                    return new[] { "", "轻木猎手短弩", "复合滑轮连弩", "穿云破甲重弩", "裂谷贯日神机弩" }[t];
+                case "tieshu":
+                    return new[] { "", "锯短双管猎枪", "锻钢霰弹火铳", "军工高爆霰弹枪", "裂谷轰鸣铁砂炮" }[t];
+                case "laochentou":
+                    return new[] { "", "行军草药铜壶", "保温百草汤锅", "高压蒸汽急救釜", "裂谷神农续命鼎" }[t];
+                case "qinghe":
+                    return new[] { "", "寒铁猎兽弹弓", "霜淬轻羽手弩", "液氮急冻连发弩", "裂谷凛冬冰封弩" }[t];
+                case "asa":
+                    return new[] { "", "改装绞盘铁钩", "锻钢倒刺飞爪", "液压夺命链刃", "裂谷血月猎魂钩" }[t];
+                case "zhoudr":
+                    return new[] { "", "自制铜线电杖", "高压电容导流杖", "超导磁暴手杖", "裂谷雷神电弧枢" }[t];
+                default:
+                    return EquipTierNames[0][t];
+            }
+        }
+
+        public void GetHeroEquipSpec(
+            int heroIdx,
+            HeroEquipSlot slot,
+            out int curTier,
+            out int nextTier,
+            out string curName,
+            out string nextName,
+            out string iconKey,
+            out string statSummary,
+            out CostPair[] nextCosts,
+            out string buildingReqHint,
+            out bool canCraftNow)
+        {
+            int sIdx = Mathf.Clamp((int)slot, 0, 3);
+            HeroSpec h = (heroIdx >= 0 && heroIdx < Heroes.Count) ? Heroes[heroIdx] : null;
+            curTier = h != null ? Mathf.Clamp(h.equipTiers[sIdx], 0, 4) : 0;
+            nextTier = Mathf.Min(4, curTier + 1);
+            if (sIdx == 0 && h != null)
+            {
+                curName = GetHeroWeaponFlavorName(h.id, curTier);
+                nextName = curTier < 4 ? GetHeroWeaponFlavorName(h.id, nextTier) : "已满阶";
+            }
+            else
+            {
+                curName = EquipTierNames[sIdx][curTier];
+                nextName = curTier < 4 ? EquipTierNames[sIdx][nextTier] : "已满阶";
+            }
+
+            switch (slot)
+            {
+                case HeroEquipSlot.Weapon:
+                    iconKey = "ico_gear_weapon";
+                    statSummary = curTier == 0
+                        ? $"打造: 攻击+{EquipWeaponAtk[1]} · 技强+{EquipWeaponSp[1]}"
+                        : (curTier < 4
+                            ? $"攻击+{EquipWeaponAtk[curTier]}→{EquipWeaponAtk[nextTier]} · 技强+{EquipWeaponSp[curTier]}→{EquipWeaponSp[nextTier]}"
+                            : $"满阶: 攻击+{EquipWeaponAtk[4]} · 技强+{EquipWeaponSp[4]}");
+                    if (curTier >= 4) nextCosts = Array.Empty<CostPair>();
+                    else if (nextTier == 1) nextCosts = new[] { new CostPair(SurvRes.Scrap, 4), new CostPair(SurvRes.Nails, 2) };
+                    else if (nextTier == 2) nextCosts = new[] { new CostPair(SurvRes.IronIngot, 2), new CostPair(SurvRes.Nails, 4) };
+                    else if (nextTier == 3) nextCosts = new[] { new CostPair(SurvRes.MetalPipe, 2), new CostPair(SurvRes.Blueprint, 2) };
+                    else nextCosts = new[] { new CostPair(SurvRes.MetalPipe, 4), new CostPair(SurvRes.Blueprint, 4), new CostPair(SurvRes.Parts, 2) };
+                    break;
+
+                case HeroEquipSlot.Armor:
+                    iconKey = "ico_gear_armor";
+                    statSummary = curTier == 0
+                        ? $"打造: 生命+{EquipArmorHp[1]} · 护甲+{EquipArmorDef[1]}"
+                        : (curTier < 4
+                            ? $"生命+{EquipArmorHp[curTier]}→{EquipArmorHp[nextTier]} · 护甲+{EquipArmorDef[curTier]}→{EquipArmorDef[nextTier]}"
+                            : $"满阶: 生命+{EquipArmorHp[4]} · 护甲+{EquipArmorDef[4]}");
+                    if (curTier >= 4) nextCosts = Array.Empty<CostPair>();
+                    else if (nextTier == 1) nextCosts = new[] { new CostPair(SurvRes.LinenShirt, 1), new CostPair(SurvRes.Cloth, 2) };
+                    else if (nextTier == 2) nextCosts = new[] { new CostPair(SurvRes.Pelt, 3), new CostPair(SurvRes.Nails, 2) };
+                    else if (nextTier == 3) nextCosts = new[] { new CostPair(SurvRes.FurCoat, 1), new CostPair(SurvRes.IronIngot, 2) };
+                    else nextCosts = new[] { new CostPair(SurvRes.PlateArmor, 1), new CostPair(SurvRes.Blueprint, 3) };
+                    break;
+
+                case HeroEquipSlot.Boots:
+                    iconKey = "ico_gear_boots";
+                    statSummary = curTier == 0
+                        ? $"打造: 生命+{EquipBootsHp[1]} · 抗性+{EquipBootsRes[1]}"
+                        : (curTier < 4
+                            ? $"生命+{EquipBootsHp[curTier]}→{EquipBootsHp[nextTier]} · 抗性+{EquipBootsRes[curTier]}→{EquipBootsRes[nextTier]}"
+                            : $"满阶: 生命+{EquipBootsHp[4]} · 抗性+{EquipBootsRes[4]}");
+                    if (curTier >= 4) nextCosts = Array.Empty<CostPair>();
+                    else if (nextTier == 1) nextCosts = new[] { new CostPair(SurvRes.Cloth, 3), new CostPair(SurvRes.Pelt, 1) };
+                    else if (nextTier == 2) nextCosts = new[] { new CostPair(SurvRes.LeatherBoots, 1), new CostPair(SurvRes.Nails, 2) };
+                    else if (nextTier == 3) nextCosts = new[] { new CostPair(SurvRes.LeatherBoots, 1), new CostPair(SurvRes.IronIngot, 2), new CostPair(SurvRes.Parts, 1) };
+                    else nextCosts = new[] { new CostPair(SurvRes.FurCoat, 1), new CostPair(SurvRes.MetalPipe, 2), new CostPair(SurvRes.Parts, 2) };
+                    break;
+
+                default: // Goggles
+                    iconKey = "ico_gear_goggles";
+                    statSummary = curTier == 0
+                        ? $"打造: 技强+{EquipGogglesSp[1]} · 暴击+3%"
+                        : (curTier < 4
+                            ? $"技强+{EquipGogglesSp[curTier]}→{EquipGogglesSp[nextTier]} · 暴击+{Mathf.RoundToInt(EquipGogglesCrit[curTier] * 100f)}%→{Mathf.RoundToInt(EquipGogglesCrit[nextTier] * 100f)}%"
+                            : $"满阶: 技强+{EquipGogglesSp[4]} · 暴击+15%");
+                    if (curTier >= 4) nextCosts = Array.Empty<CostPair>();
+                    else if (nextTier == 1) nextCosts = new[] { new CostPair(SurvRes.Scrap, 3), new CostPair(SurvRes.Cloth, 2) };
+                    else if (nextTier == 2) nextCosts = new[] { new CostPair(SurvRes.Nails, 3), new CostPair(SurvRes.Parts, 1) };
+                    else if (nextTier == 3) nextCosts = new[] { new CostPair(SurvRes.IronIngot, 2), new CostPair(SurvRes.Parts, 2), new CostPair(SurvRes.Blueprint, 2) };
+                    else nextCosts = new[] { new CostPair(SurvRes.MetalPipe, 2), new CostPair(SurvRes.Parts, 4), new CostPair(SurvRes.Blueprint, 4) };
+                    break;
+            }
+
+            bool isTailorSlot = slot == HeroEquipSlot.Armor || slot == HeroEquipSlot.Boots;
+            string shopId = isTailorSlot ? "tailor" : "smithy";
+            string shopTitle = isTailorSlot ? "裁缝防具坊" : "废铁锻造坊";
+            int reqShopLv = isTailorSlot ? nextTier : Mathf.Min(3, nextTier);
+            int curShopLv = GetNodeLevel(shopId, 0);
+
+            if (curTier >= 4)
+            {
+                buildingReqHint = "已升至传世橙装满阶";
+                canCraftNow = false;
+                return;
+            }
+
+            bool afford = CanAfford(nextCosts);
+            buildingReqHint = curShopLv >= reqShopLv
+                ? $"【{shopTitle} Lv.{curShopLv}】可打造"
+                : $"产自【{shopTitle} Lv.{reqShopLv}】";
+            canCraftNow = h != null && h.unlocked && afford;
+        }
+
+        public bool TryCraftOrUpgradeHeroEquip(int heroIdx, HeroEquipSlot slot, out string msg)
+        {
+            if (heroIdx < 0 || heroIdx >= Heroes.Count || !Heroes[heroIdx].unlocked)
+            {
+                msg = "该英雄尚未入队";
+                return false;
+            }
+            HeroSpec h = Heroes[heroIdx];
+            GetHeroEquipSpec(heroIdx, slot, out int curTier, out int nextTier, out _, out string nextName,
+                out _, out _, out CostPair[] nextCosts, out string buildingReqHint, out bool canCraftNow);
+
+            if (curTier >= 4)
+            {
+                msg = "该部位战备已达最高 4 阶橙品！";
+                return false;
+            }
+            if (!canCraftNow || !CanAfford(nextCosts))
+            {
+                msg = $"材料不足（{buildingReqHint}）：需 {FormatCosts(nextCosts)}";
+                return false;
+            }
+
+            Pay(nextCosts);
+            h.equipTiers[(int)slot] = nextTier;
+
+            if (slot == HeroEquipSlot.Armor)
+            {
+                OutfitTier targetSkin = nextTier >= 3 ? OutfitTier.Armored : (nextTier == 2 ? OutfitTier.Reinforced : h.skinTier);
+                if (targetSkin > h.skinTier)
+                {
+                    h.skinTier = targetSkin;
+                    h.portraitKey = PuppetRegistry.ResolveBustKey(h.characterId, targetSkin);
+                    OnHeroSkinChanged?.Invoke(h, targetSkin);
+                }
+            }
+
+            OnDelegationChanged?.Invoke();
+            msg = $"★ 打造升阶成功！{h.name} 穿戴【{nextName}】！";
+            return true;
+        }
+
+        // ---------------- 三大幸存者阵营光环 & 完整六维战力计算 ----------------
+        public static string GetFactionName(HeroFaction f)
+        {
+            switch (f)
+            {
+                case HeroFaction.IronGuard: return "铁卫团";
+                case HeroFaction.ForestPact: return "山林盟";
+                case HeroFaction.WasteTech: return "废土科工";
+                default: return "幸存者";
+            }
+        }
+
+        public static string GetFactionIconKey(HeroFaction f)
+        {
+            switch (f)
+            {
+                case HeroFaction.IronGuard: return "ico_faction_iron";
+                case HeroFaction.ForestPact: return "ico_faction_forest";
+                case HeroFaction.WasteTech: return "ico_faction_tech";
+                default: return "ico_faction_iron";
+            }
+        }
+
+        public void GetFactionAuraState(
+            out string activeTitle,
+            out string activeDesc,
+            out float bonusPct,
+            out int ironCount,
+            out int forestCount,
+            out int techCount)
+        {
+            ironCount = 0;
+            forestCount = 0;
+            techCount = 0;
+            int[] counts = new int[3];
+            int[] aceCounts = new int[3];
+
+            for (int s = 0; s < FormationSlots.Length; s++)
+            {
+                int idx = FormationSlots[s];
+                if (idx < 0 || idx >= Heroes.Count || !Heroes[idx].unlocked) continue;
+                HeroSpec h = Heroes[idx];
+                int f = Mathf.Clamp((int)h.faction, 0, 2);
+                counts[f]++;
+                if (h.rarity == HeroRarity.Legendary || h.star >= 3)
+                    aceCounts[f]++;
+            }
+
+            ironCount = counts[0];
+            forestCount = counts[1];
+            techCount = counts[2];
+
+            int best3Faction = -1;
+            int pairsCount = 0;
+            int bestPairFaction = -1;
+            for (int f = 0; f < 3; f++)
+            {
+                if (counts[f] >= 3 && (best3Faction < 0 || counts[f] > counts[best3Faction]))
+                    best3Faction = f;
+                if (counts[f] >= 2)
+                {
+                    pairsCount++;
+                    if (bestPairFaction < 0) bestPairFaction = f;
+                }
+            }
+
+            if (best3Faction >= 0)
+            {
+                string fn = GetFactionName((HeroFaction)best3Faction);
+                bool allAce = aceCounts[best3Faction] >= counts[best3Faction];
+                bonusPct = allAce ? 0.25f : 0.15f;
+                activeTitle = allAce ? $"王牌{fn}光环 (+25%)" : $"精锐{fn}光环 (+15%)";
+                activeDesc = $"已上阵 {counts[best3Faction]} 名【{fn}】英雄：全队生命、攻击、技能强度 +{Mathf.RoundToInt(bonusPct * 100f)}%";
+                return;
+            }
+
+            if (pairsCount >= 2)
+            {
+                bonusPct = 0.18f;
+                activeTitle = "双阵营共鸣 (+18%)";
+                activeDesc = "两组各 2 名同阵营英雄联合作战：全队生命、攻击、技能强度 +18%";
+                return;
+            }
+
+            if (bestPairFaction >= 0)
+            {
+                string fn = GetFactionName((HeroFaction)bestPairFaction);
+                bonusPct = 0.10f;
+                activeTitle = $"{fn}协同 (+10%)";
+                activeDesc = $"已上阵 2 名【{fn}】英雄：全队生命、攻击、技能强度 +10%";
+                return;
+            }
+
+            bonusPct = 0f;
+            activeTitle = "阵营光环未激活";
+            activeDesc = "上阵 2 名同阵营激活 +10% · 2+2 双阵营激活 +18% · ≥3 名同阵营激活 +15%~25%！";
+        }
+
+        public HeroComputedStats CalcHeroFullStats(int heroIdx, int slot0to8 = -1, bool includeSquadSynergy = false)
+        {
+            if (heroIdx < 0 || heroIdx >= Heroes.Count)
+                return default;
+
+            HeroSpec h = Heroes[heroIdx];
+            int lv = Mathf.Max(1, h.level);
+            float starMul = GetHeroStarMultiplier(h.star, h.starPetals);
+
+            float baseHpScaled = h.baseHp * (1f + 0.065f * (lv - 1)) * starMul;
+            float baseAtkScaled = h.baseAtk * (1f + 0.060f * (lv - 1)) * starMul;
+            float baseSpScaled = h.baseSkillPower * (1f + 0.060f * (lv - 1)) * starMul;
+
+            int armor = h.baseArmor + (lv - 1) * 3;
+            int resist = h.baseResist + (lv - 1) * 2;
+            float critRate = h.id == "asa" ? 0.14f
+                : (h.id == "linyan" ? 0.12f
+                : (h.id == "zhoudr" ? 0.10f : 0.08f));
+            float critMult = 1.50f;
+            float startRage = 0f;
+            float thornsPct = 0f;
+            float lifestealPct = 0f;
+            float healShieldBonus = 0f;
+
+            float hpPct = GetFormationGlobalBonusPct();
+            float atkPct = hpPct;
+            float spPct = hpPct;
+
+            // 1. 主动绝技倍率随第 1 技能等级 (1..5) 成长
+            int lv0 = Mathf.Clamp(Mathf.Max(1, h.skillLevels[0]), 1, 5) - 1;
+            float activeMult;
+            switch (h.id)
+            {
+                case "dachui": activeMult = new[] { 2.20f, 2.50f, 2.85f, 3.20f, 3.60f }[lv0]; break;
+                case "xiaotang": activeMult = new[] { 2.80f, 3.15f, 3.50f, 3.90f, 4.40f }[lv0]; break;
+                case "leimeng": activeMult = new[] { 2.60f, 2.95f, 3.30f, 3.70f, 4.20f }[lv0]; break;
+                case "linyan": activeMult = new[] { 3.00f, 3.40f, 3.85f, 4.35f, 4.90f }[lv0]; break;
+                case "tieshu": activeMult = new[] { 2.30f, 2.60f, 2.95f, 3.35f, 3.80f }[lv0]; break;
+                case "qinghe": activeMult = new[] { 1.90f, 2.20f, 2.50f, 2.80f, 3.10f }[lv0]; break;
+                case "asa": activeMult = new[] { 2.40f, 2.75f, 3.10f, 3.45f, 3.80f }[lv0]; break;
+                case "zhoudr": activeMult = new[] { 1.15f, 1.32f, 1.50f, 1.68f, 1.85f }[lv0]; break;
+                default: activeMult = new[] { 1.60f, 1.85f, 2.10f, 2.40f, 2.75f }[lv0]; break;
+            }
+
+            // 2. 1★ 第二技能被动属性加成 & 2★ 大锤反伤基础
+            if (h.star >= 1)
+            {
+                int lv1 = Mathf.Clamp(Mathf.Max(1, h.skillLevels[1]), 1, 5) - 1;
+                switch (h.id)
+                {
+                    case "dachui": hpPct += 0.12f + 0.06f * lv1; armor += 80; break;
+                    case "xiaotang": spPct += 0.12f + 0.06f * lv1; break;
+                    case "leimeng": atkPct += 0.10f + 0.05f * lv1; hpPct += 0.10f + 0.05f * lv1; break;
+                    case "linyan": atkPct += 0.12f + 0.05f * lv1; critRate += 0.08f; break;
+                    case "tieshu": atkPct += 0.10f + 0.05f * lv1; armor += 60; break;
+                    case "qinghe":
+                    {
+                        float qPct = 0.12f + 0.05f * lv1;
+                        spPct += qPct;
+                        resist = Mathf.RoundToInt(resist * (1f + qPct)) + 30;
+                        break;
+                    }
+                    case "asa":
+                        critRate += 0.08f + 0.03f * lv1;
+                        atkPct += 0.08f + 0.04f * lv1;
+                        break;
+                    case "zhoudr":
+                        spPct += 0.12f + 0.05f * lv1;
+                        critRate += 0.06f + 0.03f * lv1;
+                        break;
+                    default: spPct += 0.10f + 0.05f * lv1; hpPct += 0.10f + 0.05f * lv1; break;
+                }
+            }
+            if (h.id == "dachui" && h.star >= 2)
+                thornsPct += 0.12f;
+
+            // 3. 4 部位工坊装备固定加成
+            int wt = Mathf.Clamp(h.equipTiers[0], 0, 4);
+            int at = Mathf.Clamp(h.equipTiers[1], 0, 4);
+            int bt = Mathf.Clamp(h.equipTiers[2], 0, 4);
+            int gt = Mathf.Clamp(h.equipTiers[3], 0, 4);
+
+            int flatAtk = EquipWeaponAtk[wt];
+            int flatSp = EquipWeaponSp[wt] + EquipGogglesSp[gt];
+            int flatHp = EquipArmorHp[at] + EquipBootsHp[bt];
+            armor += EquipArmorDef[at];
+            resist += EquipBootsRes[bt];
+            critRate += EquipGogglesCrit[gt];
+
+            // 4. 3 槽战术徽章被动加成
+            for (int b = 0; b < h.equippedBadges.Length; b++)
+            {
+                if (!IsBadgeSlotUnlocked(h, b)) continue;
+                switch (h.equippedBadges[b])
+                {
+                    case TacticalBadgeId.EnergyCore:
+                        startRage += 40f;
+                        spPct += 0.10f;
+                        break;
+                    case TacticalBadgeId.ThornShield:
+                        armor += 120;
+                        thornsPct += 0.22f;
+                        break;
+                    case TacticalBadgeId.EagleScope:
+                        critRate += 0.15f;
+                        atkPct += 0.12f;
+                        break;
+                    case TacticalBadgeId.PyroPowder:
+                        spPct += 0.22f;
+                        activeMult *= 1.18f;
+                        break;
+                    case TacticalBadgeId.BloodFury:
+                        lifestealPct += 0.12f;
+                        atkPct += 0.08f;
+                        break;
+                    case TacticalBadgeId.MedicCross:
+                        healShieldBonus += 0.28f;
+                        resist += 90;
+                        break;
+                }
+            }
+
+            // 5. 上阵阵营光环 + 阵位加成
+            if (includeSquadSynergy)
+            {
+                GetFactionAuraState(out _, out _, out float facBonus, out _, out _, out _);
+                hpPct += facBonus;
+                atkPct += facBonus;
+                spPct += facBonus;
+
+                int resolvedSlot = slot0to8 >= 0 ? slot0to8 : FindHeroSlot(heroIdx);
+                if (resolvedSlot >= 0 && resolvedSlot < 9)
+                {
+                    SlotStatBuff sb = GetFormationSlotBuff(SelectedFormation, resolvedSlot);
+                    hpPct += sb.hpBonus;
+                    atkPct += sb.atkBonus;
+                    armor += sb.armorBonus;
+                    resist += sb.resistBonus;
+                    critMult += sb.critBonus;
+                    if (sb.startRage > 0f)
+                        startRage += sb.startRage > 1.0f ? sb.startRage : sb.startRage * 100f;
+                }
+            }
+
+            int finalHp = Mathf.Max(100, Mathf.RoundToInt((baseHpScaled + flatHp) * (1f + hpPct)));
+            int finalAtk = Mathf.Max(10, Mathf.RoundToInt((baseAtkScaled + flatAtk) * (1f + atkPct)));
+            int finalSp = Mathf.Max(10, Mathf.RoundToInt((baseSpScaled + flatSp) * (1f + spPct)));
+            int finalRange = Mathf.Clamp(h.rangeCells, 1, 5);
+            startRage = Mathf.Clamp(startRage, 0f, 100f);
+            critRate = Mathf.Clamp(critRate, 0f, 0.85f);
+
+            int skillLevelBonusSteps = 0;
+            for (int s = 0; s < 4; s++)
+            {
+                if (h.star >= s)
+                    skillLevelBonusSteps += Mathf.Max(0, h.skillLevels[s] - 1);
+            }
+            int badgeCount = 0;
+            for (int b = 0; b < h.equippedBadges.Length; b++)
+                if (IsBadgeSlotUnlocked(h, b) && h.equippedBadges[b] != TacticalBadgeId.None) badgeCount++;
+
+            float rawPower = finalHp * 0.45f + finalAtk * 4.2f + finalSp * 3.6f + (armor + resist) * 1.5f;
+            float skillAndBadgeMult = 1f + 0.08f * skillLevelBonusSteps + 0.06f * badgeCount;
+            int finalPower = Mathf.RoundToInt(rawPower * skillAndBadgeMult);
+
+            return new HeroComputedStats
+            {
+                maxHp = finalHp,
+                atk = finalAtk,
+                skillPower = finalSp,
+                range = finalRange,
+                armor = armor,
+                resistance = resist,
+                critRate = critRate,
+                critMult = critMult,
+                startRage = startRage,
+                thornsPct = thornsPct,
+                lifestealPct = lifestealPct,
+                healShieldBonus = healShieldBonus,
+                activeSkillMult = activeMult,
+                combatPower = finalPower,
+            };
         }
 
         public void EnsureCombatSquad()
@@ -1453,14 +2902,17 @@ namespace Mori.ForestSlice
         void PlaceHeroIntoBestOpenSlot(int heroIdx)
         {
             if (heroIdx < 0 || heroIdx >= Heroes.Count || FindHeroSlot(heroIdx) >= 0) return;
+            HeroSpec h = Heroes[heroIdx];
             HeroCombatRole role = GetHeroCombatRole(heroIdx);
             int[] prefOrder;
-            if (role == HeroCombatRole.Vanguard || role == HeroCombatRole.Guardian)
-                prefOrder = new[] { 5, 2, 8, 4, 1, 7, 3, 0, 6 }; // col=2 (row 1,0,2) 优先
-            else if (role == HeroCombatRole.Demolition || role == HeroCombatRole.Gunsmith)
-                prefOrder = new[] { 4, 1, 7, 3, 0, 6, 5, 2, 8 }; // col=1 (row 1,0,2) 优先
+            if (h.rangeCells <= 1 || role == HeroCombatRole.Guardian || (role == HeroCombatRole.Vanguard && h.id != "asa"))
+                prefOrder = new[] { 5, 2, 8, 4, 1, 7, 3, 0, 6 }; // col=2 (row 1,0,2) 前排优先
+            else if (h.id == "asa")
+                prefOrder = new[] { 4, 5, 1, 2, 7, 8, 3, 0, 6 }; // 前中排突袭 (col=1/2)
+            else if (h.rangeCells <= 4 || role == HeroCombatRole.Demolition || role == HeroCombatRole.Gunsmith)
+                prefOrder = new[] { 4, 1, 7, 3, 0, 6, 5, 2, 8 }; // col=1 (row 1,0,2) 中排优先
             else
-                prefOrder = new[] { 3, 0, 6, 4, 1, 7, 5, 2, 8 }; // col=0 (row 1,0,2) 优先
+                prefOrder = new[] { 3, 0, 6, 4, 1, 7, 5, 2, 8 }; // col=0 (row 1,0,2) 后排优先
 
             for (int i = 0; i < prefOrder.Length; i++)
             {
@@ -1545,6 +2997,9 @@ namespace Mori.ForestSlice
                     case "linyan": return HeroCombatRole.Ranger;
                     case "tieshu": return HeroCombatRole.Gunsmith;
                     case "laochentou": return HeroCombatRole.Medic;
+                    case "qinghe": return HeroCombatRole.Ranger;
+                    case "asa": return HeroCombatRole.Vanguard;
+                    case "zhoudr": return HeroCombatRole.Demolition;
                 }
             }
             switch (heroIdx)
@@ -1554,12 +3009,24 @@ namespace Mori.ForestSlice
                 case 2: return HeroCombatRole.Vanguard;
                 case 3: return HeroCombatRole.Ranger;
                 case 4: return HeroCombatRole.Gunsmith;
+                case 6: return HeroCombatRole.Ranger;
+                case 7: return HeroCombatRole.Vanguard;
+                case 8: return HeroCombatRole.Demolition;
                 default: return HeroCombatRole.Medic;
             }
         }
 
         public string GetHeroRoleName(int heroIdx)
         {
+            if (heroIdx >= 0 && heroIdx < Heroes.Count)
+            {
+                switch (Heroes[heroIdx].id)
+                {
+                    case "qinghe": return "寒霜猎手";
+                    case "asa": return "飞爪猎袭";
+                    case "zhoudr": return "电磁学者";
+                }
+            }
             switch (GetHeroCombatRole(heroIdx))
             {
                 case HeroCombatRole.Vanguard: return "重装先锋";
@@ -1595,25 +3062,67 @@ namespace Mori.ForestSlice
 
         public bool IsFormationUnlocked(TacticalFormationId fmt)
         {
+            if (_unlockedFormations.Contains(fmt) || _gmUnlockFullSquad) return true;
             switch (fmt)
             {
                 case TacticalFormationId.StandardLine: return true;
-                case TacticalFormationId.SpearAssault: return HordeWaveCleared >= 4 || _gmUnlockFullSquad;
-                case TacticalFormationId.IronBastion: return HordeWaveCleared >= 10 || _gmUnlockFullSquad;
-                case TacticalFormationId.VolleyFire: return HordeWaveCleared >= 18 || _gmUnlockFullSquad;
+                case TacticalFormationId.SpearAssault: return HordeWaveCleared >= 4;
+                case TacticalFormationId.ResistBarrier: return HordeWaveCleared >= 10;
+                case TacticalFormationId.IronBastion: return HordeWaveCleared >= 16;
+                case TacticalFormationId.VolleyFire: return HordeWaveCleared >= 20;
+                case TacticalFormationId.EnergySurge: return HordeWaveCleared >= 24;
                 default: return false;
             }
+        }
+
+        public string GetFormationIconKey(TacticalFormationId fmt)
+        {
+            switch (fmt)
+            {
+                case TacticalFormationId.SpearAssault: return "ico_fmt_spear";
+                case TacticalFormationId.ResistBarrier: return "ico_fmt_resist";
+                case TacticalFormationId.IronBastion: return "ico_fmt_bastion";
+                case TacticalFormationId.VolleyFire: return "ico_fmt_energy";
+                case TacticalFormationId.EnergySurge: return "ico_fmt_energy";
+                default: return "ico_fmt_default";
+            }
+        }
+
+        public float GetFormationCollectBonusFor(TacticalFormationId fmt)
+        {
+            switch (fmt)
+            {
+                case TacticalFormationId.SpearAssault: return 0.02f;
+                case TacticalFormationId.ResistBarrier: return 0.02f;
+                case TacticalFormationId.IronBastion: return 0.03f;
+                case TacticalFormationId.VolleyFire: return 0.03f;
+                case TacticalFormationId.EnergySurge: return 0.05f;
+                default: return 0f;
+            }
+        }
+
+        public float GetFormationGlobalBonusPct()
+        {
+            float sum = 0f;
+            foreach (TacticalFormationId fmt in Enum.GetValues(typeof(TacticalFormationId)))
+            {
+                if (IsFormationUnlocked(fmt))
+                    sum += GetFormationCollectBonusFor(fmt);
+            }
+            return sum;
         }
 
         public string GetFormationName(TacticalFormationId fmt)
         {
             switch (fmt)
             {
-                case TacticalFormationId.StandardLine: return "基础防线阵";
+                case TacticalFormationId.StandardLine: return "默认防线阵";
                 case TacticalFormationId.SpearAssault: return "尖锥突击阵";
-                case TacticalFormationId.IronBastion: return "铁桶抗性阵";
+                case TacticalFormationId.ResistBarrier: return "抗性增强阵";
+                case TacticalFormationId.IronBastion: return "铁桶护甲阵";
                 case TacticalFormationId.VolleyFire: return "火力齐射阵";
-                default: return "基础防线阵";
+                case TacticalFormationId.EnergySurge: return "能量激涌阵";
+                default: return "默认防线阵";
             }
         }
 
@@ -1622,13 +3131,17 @@ namespace Mori.ForestSlice
             switch (fmt)
             {
                 case TacticalFormationId.StandardLine:
-                    return "前排全列生命+15% · 中后排全列攻击+10%";
+                    return "前排护甲+80/生命+15% · 中后排攻击+10%";
                 case TacticalFormationId.SpearAssault:
-                    return "前中尖刀位减伤+25%/生命+15% · 中排暴伤+25%/攻击+15% · 后排攻击+12%";
+                    return "收集全员+2% · 前中格减伤+25% · 中排暴伤+25%/攻击+15%";
+                case TacticalFormationId.ResistBarrier:
+                    return "收集全员+2% · 上阵全队抗性+120/生命+10%~15%（克制酸毒与首领冲击）";
                 case TacticalFormationId.IronBastion:
-                    return "前排护甲减伤+22%/生命+20% · 中后排生命+12%/减伤+8%（防跳尸切后）";
+                    return "收集全员+3% · 前排护甲+180/减伤+20% · 后排生命+12%";
                 case TacticalFormationId.VolleyFire:
-                    return "中后排攻速+25%/开场怒气+35% · 前排生命+12%（速开绝技爆发）";
+                    return "收集全员+3% · 中后排攻速+25%/攻击+12% · 前排生命+12%";
+                case TacticalFormationId.EnergySurge:
+                    return "收集全员+5% · 中后排开场怒气+40（抢先手秒开绝技！）";
                 default:
                     return "";
             }
@@ -1641,11 +3154,15 @@ namespace Mori.ForestSlice
                 case TacticalFormationId.StandardLine:
                     return "初始默认解锁";
                 case TacticalFormationId.SpearAssault:
-                    return IsFormationUnlocked(fmt) ? "已解锁（第 4 关首通阵型）" : "通关第 4 关解锁【尖锥突击阵】";
+                    return IsFormationUnlocked(fmt) ? "已收集（全员三维+2%）" : "通关第 4 关掉落【尖锥突击阵】图谱";
+                case TacticalFormationId.ResistBarrier:
+                    return IsFormationUnlocked(fmt) ? "已收集（全员三维+2%）" : "通关第 10 关掉落【抗性增强阵】图谱";
                 case TacticalFormationId.IronBastion:
-                    return IsFormationUnlocked(fmt) ? "已解锁（第 10 关首通阵型）" : "通关第 10 关解锁【铁桶抗性阵】";
+                    return IsFormationUnlocked(fmt) ? "已收集（全员三维+3%）" : "通关第 16 关掉落【铁桶护甲阵】图谱";
                 case TacticalFormationId.VolleyFire:
-                    return IsFormationUnlocked(fmt) ? "已解锁（第 18 关首通阵型）" : "通关第 18 关解锁【火力齐射阵】";
+                    return IsFormationUnlocked(fmt) ? "已收集（全员三维+3%）" : "通关第 20 关掉落【火力齐射阵】图谱";
+                case TacticalFormationId.EnergySurge:
+                    return IsFormationUnlocked(fmt) ? "已收集（全员三维+5%）" : "通关第 24 关掉落【能量激涌阵】图谱";
                 default:
                     return "";
             }
@@ -1678,6 +3195,7 @@ namespace Mori.ForestSlice
                             highlighted = true,
                             dmgReduction = 0.25f,
                             hpBonus = 0.15f,
+                            armorBonus = 60,
                         };
                     }
                     if (col == 1)
@@ -1701,14 +3219,25 @@ namespace Mori.ForestSlice
                     }
                     return new SlotStatBuff { shortTag = "" };
 
+                case TacticalFormationId.ResistBarrier:
+                    return new SlotStatBuff
+                    {
+                        shortTag = "抗性+120",
+                        highlighted = true,
+                        resistBonus = 120,
+                        hpBonus = col == 2 ? 0.15f : 0.10f,
+                        dmgReduction = 0.10f,
+                    };
+
                 case TacticalFormationId.IronBastion:
                     if (col == 2)
                     {
                         return new SlotStatBuff
                         {
-                            shortTag = "护甲+22%",
+                            shortTag = "护甲+180",
                             highlighted = true,
-                            dmgReduction = 0.22f,
+                            armorBonus = 180,
+                            dmgReduction = 0.20f,
                             hpBonus = 0.20f,
                         };
                     }
@@ -1717,6 +3246,7 @@ namespace Mori.ForestSlice
                         shortTag = "生命+12%",
                         highlighted = false,
                         hpBonus = 0.12f,
+                        resistBonus = 50,
                         dmgReduction = 0.08f,
                     };
 
@@ -1728,7 +3258,7 @@ namespace Mori.ForestSlice
                             shortTag = "攻速+25%",
                             highlighted = true,
                             atkSpeedBonus = 0.25f,
-                            startRage = 0.35f,
+                            atkBonus = 0.12f,
                         };
                     }
                     return new SlotStatBuff
@@ -1736,6 +3266,26 @@ namespace Mori.ForestSlice
                         shortTag = "生命+12%",
                         highlighted = false,
                         hpBonus = 0.12f,
+                        armorBonus = 60,
+                    };
+
+                case TacticalFormationId.EnergySurge:
+                    if (col <= 1)
+                    {
+                        return new SlotStatBuff
+                        {
+                            shortTag = "怒气+40",
+                            highlighted = true,
+                            startRage = 40f,
+                            atkBonus = 0.10f,
+                        };
+                    }
+                    return new SlotStatBuff
+                    {
+                        shortTag = "护甲+90",
+                        highlighted = false,
+                        armorBonus = 90,
+                        hpBonus = 0.15f,
                     };
 
                 default: // StandardLine
@@ -1743,8 +3293,9 @@ namespace Mori.ForestSlice
                     {
                         return new SlotStatBuff
                         {
-                            shortTag = "生命+15%",
+                            shortTag = "护甲+80",
                             highlighted = true,
+                            armorBonus = 80,
                             hpBonus = 0.15f,
                         };
                     }
@@ -1866,15 +3417,15 @@ namespace Mori.ForestSlice
             for (int i = 0; i < deployCap; i++)
                 selected.Add(unlockedIdx[i]);
 
-            // 先放近战前排 (col=2: row 1 -> 0 -> 2)，再放爆破/枪匠中排 (col=1)，最后猎手/医官后排 (col=0)
+            // 先放近战前排 (col=2: row 1 -> 0 -> 2)，再放中前排突袭/枪匠/控场 (range 2..4 -> col=1)，最后远程后排 (range 5 -> col=0)
             for (int pass = 0; pass < 3; pass++)
             {
                 for (int i = 0; i < selected.Count; i++)
                 {
                     int hIdx = selected[i];
-                    HeroCombatRole role = GetHeroCombatRole(hIdx);
-                    bool isMeleePass = IsHeroMelee(hIdx);
-                    bool isMidPass = !isMeleePass && (role == HeroCombatRole.Gunsmith || role == HeroCombatRole.Demolition);
+                    int rng = Heroes[hIdx].rangeCells;
+                    bool isMeleePass = IsHeroMelee(hIdx) || rng <= 1;
+                    bool isMidPass = !isMeleePass && rng <= 4;
                     bool isBackPass = !isMeleePass && !isMidPass;
                     if ((pass == 0 && isMeleePass) || (pass == 1 && isMidPass) || (pass == 2 && isBackPass))
                         PlaceHeroIntoBestOpenSlot(hIdx);
@@ -1987,24 +3538,8 @@ namespace Mori.ForestSlice
         public int CalcHeroCombatPower(int heroIdx, int slot0to8 = -1)
         {
             if (heroIdx < 0 || heroIdx >= Heroes.Count) return 0;
-            HeroSpec h = Heroes[heroIdx];
             int resolvedSlot = slot0to8 >= 0 ? slot0to8 : FindHeroSlot(heroIdx);
-            if (resolvedSlot < 0 || resolvedSlot >= 9)
-                return h.CombatPower;
-
-            SlotStatBuff sb = GetFormationSlotBuff(SelectedFormation, resolvedSlot);
-            SynergyAuraInfo syn = GetCombinedSynergyTotals();
-
-            float atkMul = (1f + sb.atkBonus + syn.atkMulBonus)
-                         * (1f + (sb.atkSpeedBonus + syn.atkSpdBonus) * 0.65f)
-                         * (1f + sb.critBonus * 0.40f);
-            float dmgRed = Mathf.Clamp(sb.dmgReduction + syn.dmgRedBonus, 0f, 0.65f);
-            float hpMul = (1f + sb.hpBonus + syn.hpMulBonus) / Mathf.Max(0.35f, 1f - dmgRed * 0.65f);
-            float rageFactor = 1f + sb.startRage * 0.15f + syn.rageGainBonus * 0.25f;
-
-            float effAtk = h.Attack * atkMul * rageFactor;
-            float effHp = h.MaxHp * hpMul;
-            return Mathf.RoundToInt(effAtk * 4f + effHp * 0.5f);
+            return CalcHeroFullStats(heroIdx, resolvedSlot, resolvedSlot >= 0).combatPower;
         }
 
         public int CalcDeployedSquadPower()
@@ -2084,46 +3619,81 @@ namespace Mori.ForestSlice
             int recPower;
             switch (s)
             {
-                case 1: recPower = 420; break;
-                case 2: recPower = 510; break;
-                case 3: recPower = 620; break;
-                case 4: recPower = 780; break;
-                case 5: recPower = 960; break;
+                case 1: recPower = 1320; break;
+                case 2: recPower = 1650; break;
+                case 3: recPower = 2120; break;
+                case 4: recPower = 2680; break;
+                case 5: recPower = 3350; break;
                 default:
                 {
-                    float raw = 960f + (s - 5) * 195f + Mathf.Pow(s - 5, 1.72f) * 20f;
-                    if (isBoss) raw *= 1.07f;
+                    float raw = 3350f + (s - 5) * 620f + Mathf.Pow(s - 5, 1.72f) * 62f;
+                    if (isBoss) raw *= 1.08f;
                     recPower = Mathf.RoundToInt(raw / 10f) * 10;
                     break;
                 }
             }
 
             int enemyCnt = s == 1 ? 6 : (s == 2 ? 8 : (s == 3 ? 9 : Mathf.Clamp(8 + s / 2 + (isBoss ? 2 : 0), 8, 32)));
-            int rwXp = (isBoss ? 55 : 35) + s * 6;
-            int rwCoins = (isBoss ? 220 : 140) + s * 45;
-            int rwMedals = (isBoss ? 3 : 1) + s / 4;
-            int rwBp = isBoss ? (2 + s / 8) : (1 + s / 12);
+            int rwXp = (isBoss ? 30 : 18) + s * 3;
+            int rwCoins = (isBoss ? 180 : 110) + s * 35;
+            int rwMedals = (isBoss ? 2 : 1) + s / 6;
+            int rwBp = isBoss ? (2 + s / 8) : (1 + s / 14);
+
+            int rwHeroExp;
+            if (s <= 4) rwHeroExp = 320 + (s - 1) * 190;
+            else if (s <= 10) rwHeroExp = 1200 + (s - 5) * 450;
+            else if (s <= 20) rwHeroExp = 4200 + (s - 11) * 860;
+            else rwHeroExp = 15000 + (s - 21) * 2600;
+            if (isBoss) rwHeroExp = Mathf.RoundToInt(rwHeroExp * 1.15f);
+
+            int rwTickets = isBoss ? (s >= 10 ? 3 : 2) : 1;
+            int rwBooks = s <= 4 ? (2 + s / 2) : (s <= 10 ? (4 + (s - 4)) : (8 + (s - 10) * 3 / 2));
 
             int unlockHero = -1;
-            if (s == 2) unlockHero = 2;       // 雷猛 (重装先锋)
-            else if (s == 5) unlockHero = 3;  // 林砚 (山林猎手)
-            else if (s == 9) unlockHero = 4;  // 铁叔 (火力枪匠)
-            else if (s == 13) unlockHero = 5; // 老陈头 (战地医官)
+            if (s == 2) unlockHero = 2;       // 雷猛 (铁卫团·史诗)
+            else if (s == 3) unlockHero = 4;  // 铁叔 (废土科工·稀有 + 碎片×10)
+            else if (s == 5) unlockHero = 3;  // 林砚 (山林盟·传说)
+            else if (s == 8) unlockHero = 6;  // 青禾 (山林盟·史诗)
+            else if (s == 12) unlockHero = 5; // 老陈头 (山林盟·史诗)
+            else if (s == 15) unlockHero = 7; // 阿飒 (铁卫团·传说)
+            else if (s == 20) unlockHero = 8; // 周博士 (废土科工·传说)
+
+            int shardHero;
+            if (unlockHero >= 0 && unlockHero < Heroes.Count)
+            {
+                shardHero = unlockHero;
+            }
+            else if (Heroes.Count >= 9)
+            {
+                // 按稀有度权重覆盖全部 9 名英雄 (0..8)：铁叔(稀有)高频，小棠/雷猛/老陈头/青禾(史诗)中频，大锤/林砚/阿飒/周博士(传说)首领及精英关精选
+                int[] bossPool = { 0, 3, 6, 7, 8, 1, 2, 5 };
+                int[] stageWeighted9 = { 4, 1, 2, 6, 0, 4, 5, 3, 4, 7, 1, 6, 8, 2, 4, 5, 0, 3, 7, 8 };
+                shardHero = isBoss
+                    ? bossPool[(s / 5) % bossPool.Length]
+                    : stageWeighted9[(s - 1) % stageWeighted9.Length];
+            }
+            else
+            {
+                shardHero = (s - 1) % Mathf.Max(1, Heroes.Count);
+            }
+            int shardCnt = s == 3 ? 10 : (isBoss ? (4 + s / 8) : (2 + s / 10));
 
             int unlockFmt = -1;
             if (s == 4) unlockFmt = (int)TacticalFormationId.SpearAssault;
-            else if (s == 10) unlockFmt = (int)TacticalFormationId.IronBastion;
-            else if (s == 18) unlockFmt = (int)TacticalFormationId.VolleyFire;
+            else if (s == 10) unlockFmt = (int)TacticalFormationId.ResistBarrier;
+            else if (s == 16) unlockFmt = (int)TacticalFormationId.IronBastion;
+            else if (s == 20) unlockFmt = (int)TacticalFormationId.VolleyFire;
+            else if (s == 24) unlockFmt = (int)TacticalFormationId.EnergySurge;
 
             string milestone = "";
             if (HordeWaveCleared < s)
             {
                 if (unlockHero >= 0 && unlockHero < Heroes.Count && !Heroes[unlockHero].unlocked)
-                    milestone = $"首通招募：{Heroes[unlockHero].name}（{GetHeroRoleName(unlockHero)}）";
+                    milestone = $"首通招募：{Heroes[unlockHero].name}（{GetFactionName(Heroes[unlockHero].faction)}·{Heroes[unlockHero].RarityTag}）";
                 else if (unlockFmt >= 0)
-                    milestone = $"首通解锁：{GetFormationName((TacticalFormationId)unlockFmt)}";
+                    milestone = $"首通解锁图谱：【{GetFormationName((TacticalFormationId)unlockFmt)}】" + (s == 10 ? " + 先手电芯徽章" : "");
                 else if (isBoss)
-                    milestone = $"首领战里程碑：英雄勋章×{rwMedals} · 工程手稿×{rwBp}";
+                    milestone = $"首领里程碑：招募卡×{rwTickets} · 战术徽章 · 万能碎片";
             }
 
             return new BattleStageSpec
@@ -2139,6 +3709,11 @@ namespace Mori.ForestSlice
                 rewardCoins = rwCoins,
                 rewardMedals = rwMedals,
                 rewardBlueprints = rwBp,
+                rewardHeroExp = rwHeroExp,
+                rewardRecruitTickets = rwTickets,
+                rewardSkillBooks = rwBooks,
+                rewardShardHeroIdx = shardHero,
+                rewardShardCount = shardCnt,
                 unlockHeroIdx = unlockHero,
                 unlockFormationIdx = unlockFmt,
                 milestoneTag = milestone,
@@ -2152,13 +3727,71 @@ namespace Mori.ForestSlice
             BattleStageSpec spec = GetBattleStageSpec(s);
 
             Coins += spec.rewardCoins;
-            if (spec.rewardMedals > 0)
-                Add(SurvRes.HeroMedal, spec.rewardMedals, notifyToast: true);
+            if (spec.rewardHeroExp > 0)
+                Add(SurvRes.HeroExp, spec.rewardHeroExp, notifyToast: true);
+            if (spec.rewardRecruitTickets > 0)
+                Add(SurvRes.RecruitTicket, spec.rewardRecruitTickets, notifyToast: true);
+            if (spec.rewardSkillBooks > 0)
+                Add(SurvRes.SkillBook, spec.rewardSkillBooks, notifyToast: true);
             if (spec.rewardBlueprints > 0)
-                Add(SurvRes.Blueprint, spec.rewardBlueprints, notifyToast: true);
+                Add(SurvRes.Blueprint, spec.rewardBlueprints, notifyToast: false);
+            if (spec.rewardMedals > 0)
+                Add(SurvRes.HeroMedal, spec.rewardMedals, notifyToast: false);
             Add(SurvRes.Scrap, 5 + s * 2, notifyToast: false);
-            if (firstClear && spec.isBossStage)
-                Add(SurvRes.SeedGolden, 1, notifyToast: true);
+
+            string shardExtra = "";
+            if (spec.rewardShardHeroIdx >= 0 && spec.rewardShardHeroIdx < Heroes.Count && spec.rewardShardCount > 0)
+            {
+                HeroSpec shHero = Heroes[spec.rewardShardHeroIdx];
+                shHero.shards += spec.rewardShardCount;
+                shardExtra = $" · {shHero.name}碎片+{spec.rewardShardCount}";
+            }
+
+            string extra = "";
+            if (firstClear)
+            {
+                if (s == 3)
+                {
+                    AddBadge(TacticalBadgeId.ThornShield, 1);
+                    extra += "\n★ 首通战利品：【路障荆棘徽章】×1！";
+                }
+                else if (s == 5)
+                {
+                    AddBadge(TacticalBadgeId.EagleScope, 1);
+                    Add(SurvRes.ShardUnivLeg, 3, notifyToast: true);
+                    extra += "\n★ 首领大奖：【鹰眼狙击徽章】×1 · 传说万能碎片+3！";
+                }
+                else if (s == 10)
+                {
+                    AddBadge(TacticalBadgeId.EnergyCore, 1);
+                    AddBadge(TacticalBadgeId.PyroPowder, 1);
+                    Add(SurvRes.ShardUnivEpic, 5, notifyToast: true);
+                    extra += "\n★ 首领大奖：【先手电芯徽章】+【高爆火药徽章】 · 史诗万能碎片+5！";
+                }
+                else if (s == 15)
+                {
+                    AddBadge(TacticalBadgeId.BloodFury, 1);
+                    Add(SurvRes.ShardUnivLeg, 5, notifyToast: true);
+                    extra += "\n★ 首领大奖：【狂战士血怒徽章】×1 · 传说万能碎片+5！";
+                }
+                else if (s == 20)
+                {
+                    AddBadge(TacticalBadgeId.MedicCross, 1);
+                    Add(SurvRes.ShardUnivLeg, 10, notifyToast: true);
+                    extra += "\n★ 首领大奖：【白衣圣手徽章】×1 · 传说万能碎片+10！";
+                }
+                else if (spec.isBossStage && s > 20)
+                {
+                    TacticalBadgeId rotBadge = (TacticalBadgeId)(1 + ((s / 5) % 6));
+                    AddBadge(rotBadge, 1);
+                    Add(SurvRes.ShardUnivLeg, 10, notifyToast: true);
+                    Add(SurvRes.ShardUnivEpic, 6, notifyToast: false);
+                    extra += $"\n★ 首领大奖：【{GetBadgeName(rotBadge)}】×1 · 传说万能碎片+10！";
+                }
+
+                if (spec.isBossStage)
+                    Add(SurvRes.ChoiceResBox, 1, notifyToast: false);
+            }
 
             HordeWaveCleared = Mathf.Max(HordeWaveCleared, s);
             HordeRepelled = true;
@@ -2167,23 +3800,23 @@ namespace Mori.ForestSlice
 
             AddXp(spec.rewardXp, new Vector2(15.2f, 11.4f));
 
-            string extra = "";
             if (spec.unlockHeroIdx >= 0 && spec.unlockHeroIdx < Heroes.Count)
             {
                 HeroSpec uh = Heroes[spec.unlockHeroIdx];
                 bool wasLocked = !uh.unlocked;
                 UnlockHero(uh.id, silent: false);
                 if (wasLocked)
-                    extra += $"\n★ 新骨干入队：{uh.name}（{GetHeroRoleName(spec.unlockHeroIdx)}）！";
+                    extra += $"\n★ 新英雄入队：{uh.name}（{GetFactionName(uh.faction)}·{GetHeroRoleName(spec.unlockHeroIdx)}）！";
             }
             if (firstClear && spec.unlockFormationIdx >= 0)
             {
                 var fmt = (TacticalFormationId)spec.unlockFormationIdx;
-                extra += $"\n★ 新阵型解锁：【{GetFormationName(fmt)}】！";
+                _unlockedFormations.Add(fmt);
+                extra += $"\n★ 新阵型图谱激活：【{GetFormationName(fmt)}】（全员三维+{Mathf.RoundToInt(GetFormationCollectBonusFor(fmt) * 100f)}%）！";
             }
 
             EvaluateQuestProgress();
-            return $"经验 +{spec.rewardXp} · 铜币 +{spec.rewardCoins} · 勋章 +{spec.rewardMedals} · 手稿 +{spec.rewardBlueprints}{extra}";
+            return $"英雄经验 +{spec.rewardHeroExp} · 招募卡 +{spec.rewardRecruitTickets} · 技能书 +{spec.rewardSkillBooks}{shardExtra} · 铜币 +{spec.rewardCoins}{extra}";
         }
 
         // ---------------- 山口尸潮旧版兼容包装 ----------------
@@ -2227,84 +3860,489 @@ namespace Mori.ForestSlice
                 return false;
             }
             SweepCooldownSec = 25f;
-            int coins = 140 + HordeWaveCleared * 45;
-            int medals = 1 + HordeWaveCleared / 4;
-            int scrap = 6 + HordeWaveCleared * 2;
+            BattleStageSpec sp = GetBattleStageSpec(HordeWaveCleared);
+            int heroExp = Mathf.Max(240, Mathf.RoundToInt(sp.rewardHeroExp * 0.75f));
+            int coins = 110 + HordeWaveCleared * 35;
+            int books = Mathf.Max(2, sp.rewardSkillBooks / 2);
             Coins += coins;
-            Add(SurvRes.HeroMedal, medals, notifyToast: true);
-            Add(SurvRes.Scrap, scrap, notifyToast: true);
-            AddXp(28, new Vector2(14.6f, 11.8f));
-            msg = $"巡山扫荡第 {HordeWaveCleared} 关成功！勋章+{medals} · 铜币+{coins} · 废铁+{scrap}";
+            Add(SurvRes.HeroExp, heroExp, notifyToast: true);
+            Add(SurvRes.SkillBook, books, notifyToast: true);
+            AddXp(18, new Vector2(14.6f, 11.8f));
+            msg = $"巡山扫荡第 {HordeWaveCleared} 关成功！英雄经验+{heroExp} · 技能书+{books} · 铜币+{coins}";
+            return true;
+        }
+
+        // ---------------- 哨卡巡逻挂机补给箱 & 广播电台招募 & 功能消耗品 ----------------
+        public void GetPatrolPendingRewards(out int heroExp, out int coins, out int skillBooks, out int minutesAccum)
+        {
+            minutesAccum = Mathf.Clamp(Mathf.FloorToInt(PatrolAccumSec / 60f), 0, 720);
+            int s = Mathf.Max(1, HordeWaveCleared);
+            heroExp = minutesAccum * (18 + 12 * s);
+            coins = minutesAccum * (8 + 5 * s);
+            skillBooks = minutesAccum >= 15
+                ? (minutesAccum / 15) * (1 + s / 10)
+                : (minutesAccum >= 5 ? 1 : 0);
+        }
+
+        public bool TryClaimPatrolChest(out int heroExp, out int coins, out int skillBooks, out string summary)
+        {
+            GetPatrolPendingRewards(out heroExp, out coins, out skillBooks, out int mins);
+            if (mins < 1 || heroExp <= 0)
+            {
+                heroExp = 0;
+                coins = 0;
+                skillBooks = 0;
+                summary = "哨卡巡逻累积尚不足 1 分钟，稍后再来领取吧！";
+                return false;
+            }
+
+            PatrolAccumSec = Mathf.Max(0f, PatrolAccumSec - mins * 60f);
+            Add(SurvRes.HeroExp, heroExp, notifyToast: true);
+            Coins += coins;
+            if (skillBooks > 0)
+                Add(SurvRes.SkillBook, skillBooks, notifyToast: true);
+
+            summary = $"领取哨卡巡逻 {mins} 分钟收益：英雄经验+{heroExp} · 铜币+{coins}"
+                    + (skillBooks > 0 ? $" · 技能书+{skillBooks}" : "");
+            return true;
+        }
+
+        public int GetRecruitPullsUntilGuaranteed()
+            => Mathf.Clamp(10 - (RecruitPityCounter % 10), 1, 10);
+
+        int PickWeightedHeroIndexForGacha(List<int> subset, bool highRarityBias)
+        {
+            int count = subset != null ? subset.Count : Heroes.Count;
+            if (count <= 0) return 0;
+
+            int totalWeight = 0;
+            for (int i = 0; i < count; i++)
+            {
+                int hIdx = subset != null ? subset[i] : i;
+                HeroRarity rar = Heroes[Mathf.Clamp(hIdx, 0, Heroes.Count - 1)].rarity;
+                int w = highRarityBias
+                    ? (rar == HeroRarity.Legendary ? 3 : (rar == HeroRarity.Epic ? 3 : 2))
+                    : (rar == HeroRarity.Rare ? 5 : (rar == HeroRarity.Epic ? 3 : 2));
+                totalWeight += w;
+            }
+
+            int pick = _ecoRng.Next(Mathf.Max(1, totalWeight));
+            int acc = 0;
+            for (int i = 0; i < count; i++)
+            {
+                int hIdx = subset != null ? subset[i] : i;
+                HeroRarity rar = Heroes[Mathf.Clamp(hIdx, 0, Heroes.Count - 1)].rarity;
+                int w = highRarityBias
+                    ? (rar == HeroRarity.Legendary ? 3 : (rar == HeroRarity.Epic ? 3 : 2))
+                    : (rar == HeroRarity.Rare ? 5 : (rar == HeroRarity.Epic ? 3 : 2));
+                acc += w;
+                if (pick < acc)
+                    return hIdx;
+            }
+            return subset != null ? subset[count - 1] : (Heroes.Count - 1);
+        }
+
+        public List<GachaPullResult> PerformRadioRecruit(int pullCount, out string errMsg)
+        {
+            int cnt = pullCount >= 10 ? 10 : Mathf.Max(1, pullCount);
+            var results = new List<GachaPullResult>(cnt);
+
+            int tickets = Get(SurvRes.RecruitTicket);
+            if (tickets < cnt)
+            {
+                errMsg = $"电台招募卡不足 ({tickets}/{cnt})，可通过山口闯关、居民礼袋或行商兑换获取！";
+                return results;
+            }
+
+            Add(SurvRes.RecruitTicket, -cnt);
+            var newlyUnlockedHeroes = new List<HeroSpec>();
+
+            for (int i = 0; i < cnt; i++)
+            {
+                TotalRecruitPulls++;
+                RecruitPityCounter++;
+                bool isPity10 = (RecruitPityCounter % 10 == 0);
+                double roll = _ecoRng.NextDouble();
+
+                if (isPity10 || roll < 0.16)
+                {
+                    // 保底整卡或高阶英雄大额碎片：涵盖全 9 名英雄并按稀有度加权，优先抽取尚未解锁英雄！
+                    var lockedIndices = new List<int>();
+                    for (int h = 0; h < Heroes.Count; h++)
+                        if (!Heroes[h].unlocked) lockedIndices.Add(h);
+
+                    int pickHeroIdx = (lockedIndices.Count > 0 && (isPity10 || _ecoRng.NextDouble() < 0.65))
+                        ? PickWeightedHeroIndexForGacha(lockedIndices, highRarityBias: true)
+                        : PickWeightedHeroIndexForGacha(null, highRarityBias: true);
+
+                    HeroSpec hero = Heroes[Mathf.Clamp(pickHeroIdx, 0, Heroes.Count - 1)];
+                    int rar05 = hero.rarity == HeroRarity.Legendary ? 4 : (hero.rarity == HeroRarity.Epic ? 3 : 2);
+
+                    if (!hero.unlocked)
+                    {
+                        hero.unlocked = true;
+                        hero.skillLevels[0] = Mathf.Max(1, hero.skillLevels[0]);
+                        newlyUnlockedHeroes.Add(hero);
+                        results.Add(new GachaPullResult
+                        {
+                            isFullHero = true,
+                            isNewUnlock = true,
+                            heroIdx = pickHeroIdx,
+                            shardCount = 0,
+                            bonusItem = SurvRes.HeroExp,
+                            bonusCount = 0,
+                            label = $"★整卡：{hero.name}",
+                            iconKey = hero.portraitKey,
+                            rarity0to5 = rar05,
+                        });
+                    }
+                    else
+                    {
+                        int dupShards = 10;
+                        hero.shards += dupShards;
+                        results.Add(new GachaPullResult
+                        {
+                            isFullHero = true,
+                            isNewUnlock = false,
+                            heroIdx = pickHeroIdx,
+                            shardCount = dupShards,
+                            bonusItem = SurvRes.HeroExp,
+                            bonusCount = 0,
+                            label = $"{hero.name}碎片×{dupShards}",
+                            iconKey = hero.ShardIconKey,
+                            rarity0to5 = rar05,
+                        });
+                    }
+                }
+                else if (roll < 0.72)
+                {
+                    // 英雄专属拼图碎片 (涵盖全 9 名英雄按品质稀有度加权抽取，3~6片)
+                    int pickHeroIdx = PickWeightedHeroIndexForGacha(null, highRarityBias: false);
+                    HeroSpec hero = Heroes[pickHeroIdx];
+                    int rar05 = hero.rarity == HeroRarity.Legendary ? 4 : (hero.rarity == HeroRarity.Epic ? 3 : 2);
+                    int sc = hero.rarity == HeroRarity.Legendary ? _ecoRng.Next(3, 5) : _ecoRng.Next(4, 7);
+                    hero.shards += sc;
+                    results.Add(new GachaPullResult
+                    {
+                        isFullHero = false,
+                        isNewUnlock = false,
+                        heroIdx = pickHeroIdx,
+                        shardCount = sc,
+                        bonusItem = SurvRes.HeroExp,
+                        bonusCount = 0,
+                        label = $"{hero.name}碎片×{sc}",
+                        iconKey = hero.ShardIconKey,
+                        rarity0to5 = rar05,
+                    });
+                }
+                else if (roll < 0.88)
+                {
+                    // 英雄经验晶簇或战术技能书
+                    bool isBook = _ecoRng.NextDouble() < 0.5;
+                    SurvRes bItem = isBook ? SurvRes.SkillBook : SurvRes.HeroExp;
+                    int bCnt = isBook ? _ecoRng.Next(4, 7) : (_ecoRng.Next(26, 42) * 10);
+                    Add(bItem, bCnt, notifyToast: false);
+                    results.Add(new GachaPullResult
+                    {
+                        isFullHero = false,
+                        isNewUnlock = false,
+                        heroIdx = -1,
+                        shardCount = 0,
+                        bonusItem = bItem,
+                        bonusCount = bCnt,
+                        label = $"{ResName(bItem)}×{bCnt}",
+                        iconKey = GetResIconKey(bItem),
+                        rarity0to5 = isBook ? 2 : 2,
+                    });
+                }
+                else
+                {
+                    // 史诗/传说万能碎片惊喜掉落
+                    bool legUniv = _ecoRng.NextDouble() < 0.35;
+                    SurvRes uItem = legUniv ? SurvRes.ShardUnivLeg : SurvRes.ShardUnivEpic;
+                    int uCnt = legUniv ? 2 : 3;
+                    Add(uItem, uCnt, notifyToast: false);
+                    results.Add(new GachaPullResult
+                    {
+                        isFullHero = false,
+                        isNewUnlock = false,
+                        heroIdx = -1,
+                        shardCount = 0,
+                        bonusItem = uItem,
+                        bonusCount = uCnt,
+                        label = $"{ResName(uItem)}×{uCnt}",
+                        iconKey = GetResIconKey(uItem),
+                        rarity0to5 = legUniv ? 4 : 3,
+                    });
+                }
+            }
+
+            if (newlyUnlockedHeroes.Count > 0)
+            {
+                AutoAssignHeroes();
+                EnsureCombatSquad();
+                for (int u = 0; u < newlyUnlockedHeroes.Count; u++)
+                    OnHeroUnlocked?.Invoke(newlyUnlockedHeroes[u]);
+            }
+
+            errMsg = null;
+            return results;
+        }
+
+        public bool TryOpenChoiceResBox(SurvRes chosenRes, int count, out string msg)
+        {
+            if (chosenRes != SurvRes.Wood && chosenRes != SurvRes.Scrap &&
+                chosenRes != SurvRes.Water && chosenRes != SurvRes.Cloth && chosenRes != SurvRes.Herb)
+            {
+                msg = "原料自选箱仅可兑换：原木、废铁、净水、粗麻布或山草药！";
+                return false;
+            }
+            int haveBox = Get(SurvRes.ChoiceResBox);
+            if (haveBox <= 0)
+            {
+                msg = "背包内暂无【原料自选箱】";
+                return false;
+            }
+            int useCnt = Mathf.Clamp(Mathf.Max(1, count), 1, haveBox);
+            if (Get(chosenRes) >= StorageCap)
+            {
+                msg = $"【{ResName(chosenRes)}】已达仓库储量上限({StorageCap})，请先消耗或升级物资仓库！";
+                return false;
+            }
+
+            int rawGain = useCnt * 5;
+            Add(SurvRes.ChoiceResBox, -useCnt);
+            int before = Get(chosenRes);
+            Add(chosenRes, rawGain, notifyToast: true);
+            int actualGain = Mathf.Max(0, Get(chosenRes) - before);
+            msg = $"开启【原料自选箱×{useCnt}】：获得 {ResName(chosenRes)} +{actualGain}！";
+            return true;
+        }
+
+        public bool TryUseSpeedHourglass(out string msg)
+        {
+            if (Get(SurvRes.SpeedHourglass) <= 0)
+            {
+                msg = "背包内暂无【工坊加速沙漏】";
+                return false;
+            }
+
+            const float skipSec = 300f;
+            Add(SurvRes.SpeedHourglass, -1);
+
+            int spedBuilds = 0;
+            int spedCrafts = 0;
+            int spedFarms = 0;
+            int spedRanches = 0;
+
+            for (int i = 0; i < Nodes.Count; i++)
+            {
+                CampNode n = Nodes[i];
+                if (n.state == NodeState.Constructing)
+                {
+                    n.buildTimer += skipSec;
+                    spedBuilds++;
+                    if (n.buildTimer >= n.buildDuration)
+                    {
+                        n.buildTimer = n.buildDuration;
+                        n.state = NodeState.ReadyToHammer;
+                        OnNodeVisualChanged?.Invoke(n);
+                    }
+                }
+                else if (n.state == NodeState.Active && n.queue.Count > 0)
+                {
+                    float rem = skipSec;
+                    while (n.queue.Count > 0 && rem > 0.01f)
+                    {
+                        QueueItem q = n.queue[0];
+                        float need = Mathf.Max(0f, q.duration - q.timer);
+                        if (rem >= need)
+                        {
+                            rem -= need;
+                            n.queue.RemoveAt(0);
+                            DeliverRecipeOutput(n, q.recipe);
+                            spedCrafts++;
+                        }
+                        else
+                        {
+                            q.timer += rem;
+                            rem = 0f;
+                            spedCrafts++;
+                        }
+                    }
+                }
+            }
+
+            int fCap = GetFarmPlotCap();
+            for (int i = 0; i < fCap && i < FarmPlots.Count; i++)
+            {
+                FarmPlotSlot sl = FarmPlots[i];
+                if (sl.phase == FarmPhase.Growing)
+                {
+                    sl.timer += skipSec;
+                    spedFarms++;
+                    if (sl.timer >= sl.duration)
+                        sl.phase = FarmPhase.Ripe;
+                }
+            }
+            if (spedFarms > 0)
+                SyncFarmVisualPhase();
+
+            int rCap = GetRanchPenCap();
+            for (int i = 0; i < rCap && i < RanchPens.Count; i++)
+            {
+                RanchPenSlot pen = RanchPens[i];
+                if (pen.feeding)
+                {
+                    pen.timer += skipSec;
+                    spedRanches++;
+                    if (pen.timer >= pen.duration)
+                    {
+                        pen.feeding = false;
+                        pen.readyToCollect = true;
+                    }
+                }
+            }
+
+            OrderRefreshCooldown = Mathf.Max(0f, OrderRefreshCooldown - skipSec);
+            SweepCooldownSec = Mathf.Max(0f, SweepCooldownSec - skipSec);
+            PatrolAccumSec = Mathf.Min(43200f, PatrolAccumSec + skipSec);
+            EvaluateQuestProgress();
+
+            int totalTargets = spedBuilds + spedCrafts + spedFarms + spedRanches;
+            msg = totalTargets > 0
+                ? $"使用【工坊加速沙漏】快进 5 分钟！加速建造{spedBuilds} · 工坊{spedCrafts} · 农牧{spedFarms + spedRanches}（并累积哨卡巡逻+5分钟）！"
+                : "使用【工坊加速沙漏】快进 5 分钟！哨卡巡逻挂机收益已立即增加 5 分钟！";
             return true;
         }
 
         void InitHeroes()
         {
             Heroes.Clear();
-            // 0: 大锤 (铁壁重卫 · 初始解锁主盾，前排中路 slot=5)
+            // 0: 大锤 (铁卫团 · 传说 · 前排重卫，初始解锁，0★1瓣 + 4片测试升瓣)
             Heroes.Add(new HeroSpec
             {
                 id = "dachui", characterId = "dachui", name = "大锤", roleTitle = "铁壁重卫 · 嘲讽护盾",
-                rarity = HeroRarity.Legendary, baseAtk = 32, baseHp = 350, isMelee = true, projKey = "proj_wrench",
-                skillName = "路牌重盾震击", skillDesc = "前排嘲讽聚怪，展开高额护盾并重锤震晕周围尸群！",
+                faction = HeroFaction.IronGuard, rarity = HeroRarity.Legendary,
+                rangeCells = 1, baseHp = 420, baseAtk = 34, baseSkillPower = 38, baseArmor = 110, baseResist = 75,
+                star = 0, starPetals = 1, shards = 4,
+                isMelee = true, projKey = "proj_wrench",
+                skillName = "路牌重盾震击", skillDesc = "展开220%技强路牌重盾并嘲讽聚怪，重锤猛击造成范围物理伤害！",
                 prefPost1 = DelegationPostKind.BuildSpeed, prefPost2 = DelegationPostKind.TruckArmor,
                 portraitKey = "bust_dachui", targetBuildingTitle = "建筑加速 / 皮卡重甲",
-                buffDesc = "专长：建造加速 · 重甲主盾",
+                buffDesc = "铁卫团 · 建造加速 · 重甲主盾",
                 unlocked = true, assigned = true, skinTier = OutfitTier.Refugee,
             });
-            // 1: 小棠 (爆破工匠 · 初始解锁后排范围灼烧，后排中路 slot=3)
+            // 1: 小棠 (废土科工 · 史诗 · 中后排爆破，初始解锁，0★1瓣 + 4片测试升瓣)
             Heroes.Add(new HeroSpec
             {
                 id = "xiaotang", characterId = "xiaotang", name = "小棠", roleTitle = "爆破工匠 · 烈焰灼烧",
-                rarity = HeroRarity.Epic, baseAtk = 31, baseHp = 195, isMelee = false, projKey = "proj_wrench",
-                skillName = "高爆燃烧瓶", skillDesc = "投掷燃烧瓶在战场铺设烈焰火海，持续范围灼烧丧尸！",
+                faction = HeroFaction.WasteTech, rarity = HeroRarity.Epic,
+                rangeCells = 4, baseHp = 230, baseAtk = 32, baseSkillPower = 46, baseArmor = 55, baseResist = 70,
+                star = 0, starPetals = 1, shards = 4,
+                isMelee = false, projKey = "proj_wrench",
+                skillName = "高爆燃烧瓶", skillDesc = "投掷燃烧瓶铺设3.5秒烈焰火海，共造成280%技强火焰元素伤害！",
                 prefPost1 = DelegationPostKind.WorkshopSpeed, prefPost2 = DelegationPostKind.BuildSpeed,
                 portraitKey = "bust_xiaotang", targetBuildingTitle = "废铁锻造坊 / 基建加速",
-                buffDesc = "专长：作坊提速 · 建造加速",
+                buffDesc = "废土科工 · 作坊提速 · 火焰破甲",
                 unlocked = true, assigned = true, skinTier = OutfitTier.Refugee,
             });
-            // 2: 雷猛 (重装先锋 · 第2关首通或营地Lv.3招募)
+            // 2: 雷猛 (铁卫团 · 史诗 · 前排狂斧先锋，第2关首通 / 电台招募 / 10碎片合成)
             Heroes.Add(new HeroSpec
             {
-                id = "leimeng", characterId = "hunter", name = "雷猛", roleTitle = "重装先锋 · 狂斧横扫",
-                rarity = HeroRarity.Epic, baseAtk = 36, baseHp = 275, isMelee = true, projKey = "proj_wrench",
-                skillName = "狂风破障斩", skillDesc = "冲锋挥动消防破拆重斧横扫尸群，造成高额范围劈砍伤害并击退！",
+                id = "leimeng", characterId = "leimeng", name = "雷猛", roleTitle = "重装先锋 · 狂斧横扫",
+                faction = HeroFaction.IronGuard, rarity = HeroRarity.Epic,
+                rangeCells = 1, unlockStage = 2, baseHp = 330, baseAtk = 40, baseSkillPower = 42, baseArmor = 85, baseResist = 60,
+                star = 0, starPetals = 0, shards = 2,
+                isMelee = true, projKey = "proj_wrench",
+                skillName = "狂风破障斩", skillDesc = "挥动消防破拆重斧旋风横扫，造成260%技强范围物理伤害并击退！",
                 prefPost1 = DelegationPostKind.WorkshopSpeed, prefPost2 = DelegationPostKind.DefensePower,
-                portraitKey = "bust_vil_0", targetBuildingTitle = "作坊提速 / 城防主将",
-                buffDesc = "专长：作坊提速 · 城防 (第2关/Lv.3)",
+                portraitKey = "bust_leimeng", targetBuildingTitle = "作坊提速 / 城防主将",
+                buffDesc = "铁卫团 · 作坊提速 · 城防 (第2关/电台)",
                 unlocked = false, assigned = false, skinTier = OutfitTier.Refugee,
             });
-            // 3: 林砚 (山林猎手 · 第5关首通或营地Lv.4招募)
+            // 3: 林砚 (山林盟 · 传说升格 · 后排连弩主C，第5关首通 / 电台招募 / 10碎片合成)
             Heroes.Add(new HeroSpec
             {
-                id = "linyan", characterId = "linyan", name = "林砚", roleTitle = "山林猎手 · 连弩穿透",
-                rarity = HeroRarity.Epic, baseAtk = 36, baseHp = 175, isMelee = false, projKey = "proj_arrow",
-                skillName = "贯日散射箭雨", skillDesc = "后排高速连弩点杀，大招倾泻穿云箭雨贯穿整条战线！",
+                id = "linyan", characterId = "linyan", name = "林砚", roleTitle = "山林猎手 · 连弩主C",
+                faction = HeroFaction.ForestPact, rarity = HeroRarity.Legendary,
+                rangeCells = 5, unlockStage = 5, baseHp = 220, baseAtk = 45, baseSkillPower = 48, baseArmor = 50, baseResist = 65,
+                star = 0, starPetals = 0, shards = 0,
+                isMelee = false, projKey = "proj_arrow",
+                skillName = "贯日散射箭雨", skillDesc = "向敌阵倾泻6波穿云连弩箭，总计造成300%技强贯穿物理伤害！",
                 prefPost1 = DelegationPostKind.DefensePower, prefPost2 = DelegationPostKind.FarmYield,
                 portraitKey = "bust_linyan", targetBuildingTitle = "城防哨塔 / 农牧巡林",
-                buffDesc = "专长：哨塔火力 · 农田 (第5关/Lv.4)",
+                buffDesc = "山林盟 · 哨塔火力 · 连弩穿透 (第5关/电台)",
                 unlocked = false, assigned = false, skinTier = OutfitTier.Refugee,
             });
-            // 4: 铁叔 (火力枪匠 · 第9关首通或营地Lv.7招募)
+            // 4: 铁叔 (废土科工 · 稀有 · 中排霰弹压制，第3关首通 / 电台招募 / 10碎片合成)
             Heroes.Add(new HeroSpec
             {
                 id = "tieshu", characterId = "tieshu", name = "铁叔", roleTitle = "火力枪匠 · 霰弹压制",
-                rarity = HeroRarity.Rare, baseAtk = 26, baseHp = 220, isMelee = false, projKey = "proj_buckshot",
-                skillName = "双管高爆霰弹", skillDesc = "中排扇形倾泻高爆铁砂弹，强力击退并压制逼近尸潮！",
+                faction = HeroFaction.WasteTech, rarity = HeroRarity.Rare,
+                rangeCells = 3, unlockStage = 3, baseHp = 270, baseAtk = 33, baseSkillPower = 36, baseArmor = 75, baseResist = 55,
+                star = 0, starPetals = 0, shards = 4,
+                isMelee = false, projKey = "proj_buckshot",
+                skillName = "双管高爆霰弹", skillDesc = "中排扇形倾泻高爆铁砂弹，造成230%技强物理伤害并强力击退尸潮！",
                 prefPost1 = DelegationPostKind.TruckArmor, prefPost2 = DelegationPostKind.CaravanBonus,
-                portraitKey = "survivor_tieshu", targetBuildingTitle = "远征皮卡 / 行商护航",
-                buffDesc = "专长：皮卡载重 · 行商 (第9关/Lv.7)",
+                portraitKey = "bust_tieshu", targetBuildingTitle = "远征皮卡 / 行商护航",
+                buffDesc = "废土科工 · 皮卡载重 · 近战压制 (第3关/电台)",
                 unlocked = false, assigned = false, skinTier = OutfitTier.Refugee,
             });
-            // 5: 老陈头 (战地医官 · 第13关首通或营地Lv.10招募)
+            // 5: 老陈头 (山林盟 · 史诗升格 · 后排群疗神辅，第12关首通 / 电台招募 / 10碎片合成)
             Heroes.Add(new HeroSpec
             {
                 id = "laochentou", characterId = "laochentou", name = "老陈头", roleTitle = "战地医官 · 急救群疗",
-                rarity = HeroRarity.Rare, baseAtk = 23, baseHp = 210, isMelee = false, projKey = "proj_fire_pool",
-                skillName = "战地急救热汤", skillDesc = "持续急救伤员，大招恢复全队生命并附加守护护盾！",
+                faction = HeroFaction.ForestPact, rarity = HeroRarity.Epic,
+                rangeCells = 5, unlockStage = 12, baseHp = 255, baseAtk = 26, baseSkillPower = 50, baseArmor = 60, baseResist = 85,
+                star = 0, starPetals = 0, shards = 0,
+                isMelee = false, projKey = "proj_fire_pool",
+                skillName = "战地急救热汤", skillDesc = "为全队恢复160%技强生命值，并施加持续4秒的守护草本护盾！",
                 prefPost1 = DelegationPostKind.FarmYield, prefPost2 = DelegationPostKind.CaravanBonus,
                 portraitKey = "bust_laochentou", targetBuildingTitle = "农田丰收 / 行商议价",
-                buffDesc = "专长：农田采收 · 行商 (第13关/Lv.10)",
+                buffDesc = "山林盟 · 农田采收 · 全队群疗 (第12关/电台)",
+                unlocked = false, assigned = false, skinTier = OutfitTier.Refugee,
+            });
+            // 6: 青禾 (山林盟 · 史诗 · 中后排寒霜控场，第8关首通 / 电台招募 / 10碎片合成)
+            Heroes.Add(new HeroSpec
+            {
+                id = "qinghe", characterId = "qinghe", name = "青禾", roleTitle = "寒霜猎手 · 冰封控场",
+                faction = HeroFaction.ForestPact, rarity = HeroRarity.Epic,
+                rangeCells = 4, unlockStage = 8, baseHp = 245, baseAtk = 34, baseSkillPower = 48, baseArmor = 58, baseResist = 88,
+                star = 0, starPetals = 0, shards = 0,
+                isMelee = false, projKey = "proj_arrow",
+                skillName = "霜寒捕兽夹阵", skillDesc = "投掷液氮寒霜瓶造成190%技强元素伤害，并冻结范围内尸群2.0秒！",
+                prefPost1 = DelegationPostKind.FarmYield, prefPost2 = DelegationPostKind.DefensePower,
+                portraitKey = "bust_qinghe", targetBuildingTitle = "农牧庄园 / 城防哨塔",
+                buffDesc = "山林盟 · 农牧提速 · 寒霜冰封 (第8关/电台)",
+                unlocked = false, assigned = false, skinTier = OutfitTier.Refugee,
+            });
+            // 7: 阿飒 (铁卫团 · 传说 · 前中排飞爪突袭，第15关首通 / 电台招募 / 10碎片合成)
+            Heroes.Add(new HeroSpec
+            {
+                id = "asa", characterId = "asa", name = "阿飒", roleTitle = "飞爪猎袭 · 夺命钩锁",
+                faction = HeroFaction.IronGuard, rarity = HeroRarity.Legendary,
+                rangeCells = 2, unlockStage = 15, baseHp = 350, baseAtk = 48, baseSkillPower = 46, baseArmor = 90, baseResist = 68,
+                star = 0, starPetals = 0, shards = 0,
+                isMelee = false, projKey = "proj_wrench",
+                skillName = "飞爪夺命钩", skillDesc = "甩出改装绞盘铁钩将敌方最远后排拉至身前重劈，造成240%技强物理伤害！",
+                prefPost1 = DelegationPostKind.TruckArmor, prefPost2 = DelegationPostKind.DefensePower,
+                portraitKey = "bust_asa", targetBuildingTitle = "远征皮卡 / 城防哨塔",
+                buffDesc = "铁卫团 · 皮卡装甲 · 飞爪切后 (第15关/电台)",
+                unlocked = false, assigned = false, skinTier = OutfitTier.Refugee,
+            });
+            // 8: 周博士 (废土科工 · 传说 · 后排连锁电弧主C，第20关首通 / 电台招募 / 10碎片合成)
+            Heroes.Add(new HeroSpec
+            {
+                id = "zhoudr", characterId = "zhoudr", name = "周博士", roleTitle = "电磁学者 · 超载电弧",
+                faction = HeroFaction.WasteTech, rarity = HeroRarity.Legendary,
+                rangeCells = 5, unlockStage = 20, baseHp = 240, baseAtk = 42, baseSkillPower = 56, baseArmor = 55, baseResist = 92,
+                star = 0, starPetals = 0, shards = 0,
+                isMelee = false, projKey = "proj_wrench",
+                skillName = "超载电磁风暴", skillDesc = "召唤高压电弧在敌群间弹射8次，每次造成115%技强元素伤害并麻痹！",
+                prefPost1 = DelegationPostKind.WorkshopSpeed, prefPost2 = DelegationPostKind.BuildSpeed,
+                portraitKey = "bust_zhoudr", targetBuildingTitle = "全工坊提速 / 工程建造",
+                buffDesc = "废土科工 · 工坊超频 · 连锁电弧 (第20关/电台)",
                 unlocked = false, assigned = false, skinTier = OutfitTier.Refugee,
             });
 
@@ -2751,16 +4789,16 @@ namespace Mori.ForestSlice
 
             Nodes.Add(new CampNode
             {
-                id = "radio_post", kind = NodeKind.RadioPost, state = NodeState.HiddenInForest, level = 0, maxLevel = 2, unlockPlayerLv = 10,
-                hintLabel = "断线电台塔", ruinTitle = "山口行商电台", activeTitle = "山口行商电台",
-                desc = "修复短波求生电台联络邻山聚落，招来【山口行商驼队】高价收购皮衣、急救箱与熏肉，换取巨额铜币与工程手稿！",
-                benefitLabel = "行商收购溢价与手稿配额", benefitFrom = 0, benefitTo = 100, benefitRes = SurvRes.Blueprint,
+                id = "radio_post", kind = NodeKind.RadioPost, state = NodeState.HiddenInForest, level = 0, maxLevel = 2, unlockPlayerLv = 3,
+                hintLabel = "断线电台塔", ruinTitle = "短波广播·行商电台", activeTitle = "短波广播·行商电台",
+                desc = "修复短波求生电台呼叫幸存者英雄加盟，并联络【山口行商驼队】高价收购皮衣、急救箱与熏肉，换取铜币、招募卡与工程手稿！",
+                benefitLabel = "广播招募与行商贸易溢价", benefitFrom = 0, benefitTo = 100, benefitRes = SurvRes.RecruitTicket,
                 gx = 26.4f, gy = 25.2f, occupyX = 25, occupyY = 24, occupyW = 2, occupyH = 2,
-                revealChunkX = 8, revealChunkY = 8, buildDuration = 4.2f,
-                buildCoinCost = 950, buildReqPop = 16,
-                buildCosts = new[] { new CostPair(SurvRes.Blueprint, 3), new CostPair(SurvRes.IronBeam, 3), new CostPair(SurvRes.Parts, 2) },
+                revealChunkX = 8, revealChunkY = 8, buildDuration = 3.8f,
+                buildCoinCost = 140, buildReqPop = 4,
+                buildCosts = new[] { new CostPair(SurvRes.Plank, 6), new CostPair(SurvRes.Scrap, 4) },
                 requiresSiteSalvage = true, siteUncovered = false, siteSalvageCleared = false,
-                compassDir = "东北山巅", salvageLabel = "军用短波天线包", salvageBonusRes = SurvRes.Parts, salvageBonusAmt = 2,
+                compassDir = "东北山巅", salvageLabel = "军用短波天线包", salvageBonusRes = SurvRes.RecruitTicket, salvageBonusAmt = 2,
             });
 
             Nodes.Add(new CampNode
@@ -3105,8 +5143,15 @@ namespace Mori.ForestSlice
                 case SurvRes.SeedHerb: targetNodeId = "farm_a"; return "砍树/采果必掉，且【生态选种农田】每次收获保底返种自循环";
                 case SurvRes.SeedGolden: targetNodeId = "relic_truck"; return "农田施肥变异、迎击尸潮波次宝箱或赴丧尸城搜刮获得";
                 case SurvRes.Parts: targetNodeId = "relic_truck"; return "赴丧尸城【急诊药房/汽修街】搜刮或拆解密林物资箱";
-                case SurvRes.Blueprint: targetNodeId = "relic_truck"; return "赴【丧尸城搜刮】、【迎击尸潮】、【山口行商】或【提升星级】获得";
-                case SurvRes.HeroMedal: targetNodeId = "barricade"; return "点击底部【迎击】击退山口尸潮，或赴丧尸城击杀守箱尸王获得";
+                case SurvRes.Blueprint: targetNodeId = "relic_truck"; return "赴【丧尸城搜刮】、【山口闯关】、【山口行商】或【提升星级】获得";
+                case SurvRes.HeroMedal: targetNodeId = "barricade"; return "点击底部【战斗】闯关击退山口尸潮，或居民5单礼袋获得";
+                case SurvRes.HeroExp: targetNodeId = "barricade"; return "点击底部【战斗】山口闯关或开启【哨卡巡逻挂机箱】大量产出，唯一用于英雄升级！";
+                case SurvRes.RecruitTicket: targetNodeId = "radio_post"; return "山口闯关、居民5单礼袋或山口行商兑换获得，在【短波广播站】抽取英雄与碎片！";
+                case SurvRes.SkillBook: targetNodeId = "barricade"; return "山口闯关、哨卡巡逻挂机箱或山口行商兑换获得，用于提升英雄4大技能等级！";
+                case SurvRes.ShardUnivEpic:
+                case SurvRes.ShardUnivLeg: targetNodeId = "radio_post"; return "首领关首通、广播电台十连或居民礼袋获得，可 1:1 兑换对应品质任意英雄碎片！";
+                case SurvRes.ChoiceResBox: return "在背包点击【使用】可自由任选：原木、废铁、净水、粗麻布或山草药！";
+                case SurvRes.SpeedHourglass: return "在背包点击【使用】立即缩短所有进行中的建造、作坊生产与农牧倒计时 5 分钟！";
                 default: return "在营地探索与生产中获得";
             }
         }
@@ -3415,10 +5460,6 @@ namespace Mori.ForestSlice
                 if (!Heroes[i].unlocked || Heroes[i].skinTier >= unlockedTier) continue;
                 Heroes[i].skinTier = unlockedTier;
                 string resolvedBust = PuppetRegistry.ResolveBustKey(Heroes[i].characterId, unlockedTier);
-                if (Heroes[i].id == "leimeng")
-                    resolvedBust = "bust_vil_0";
-                else if (Heroes[i].id == "tieshu")
-                    resolvedBust = "survivor_tieshu";
                 Heroes[i].portraitKey = resolvedBust;
                 OnHeroSkinChanged?.Invoke(Heroes[i], unlockedTier);
                 anyUpgraded = true;
@@ -4231,10 +6272,12 @@ namespace Mori.ForestSlice
                 int chestCoins = Mathf.RoundToInt(260 * popProsperity);
                 Coins += chestCoins;
                 Add(SurvRes.Blueprint, 2, notifyToast: true);
-                Add(SurvRes.HeroMedal, 1, notifyToast: true);
+                Add(SurvRes.RecruitTicket, 1, notifyToast: true);
+                Add(SurvRes.ChoiceResBox, 1, notifyToast: false);
+                Add(SurvRes.HeroExp, 200 + CampLevel * 40, notifyToast: false);
                 if (CampLevel >= 3) Add(SurvRes.Scrap, 6, notifyToast: false);
                 if (CampLevel >= 6) Add(SurvRes.Parts, 1, notifyToast: true);
-                OnWorldToast?.Invoke($"达成 5 单居民宝箱！铜币+{chestCoins} · 手稿+2 · 勋章+1！", survivorGrid);
+                OnWorldToast?.Invoke($"达成 5 单居民礼袋！铜币+{chestCoins} · 招募卡+1 · 自选箱+1 · 手稿+2！", survivorGrid);
             }
 
             thanks = d.thanksLine;
@@ -4281,9 +6324,9 @@ namespace Mori.ForestSlice
 
         public bool TryTradeCaravanOffer(int idx, out string msg)
         {
-            if (!RadioRepaired)
+            if (!RadioRepaired && CampLevel < 3)
             {
-                msg = "请先在东北高地建造【山口行商电台】（Lv.10解锁）！";
+                msg = "请先升至 Lv.3 或修缮东北【短波广播·行商电台】联络商队！";
                 return false;
             }
             if (idx < 0 || idx >= CaravanOffers.Count) { msg = "无效商单"; return false; }
@@ -4312,6 +6355,9 @@ namespace Mori.ForestSlice
         {
             float mul = ProdSpeedMultiplier;
             float gatherMul = PopulationGatherMultiplier;
+
+            if (dt > 0f)
+                PatrolAccumSec = Mathf.Min(43200f, PatrolAccumSec + dt);
 
             if (OrderRefreshCooldown > 0f)
                 OrderRefreshCooldown = Mathf.Max(0f, OrderRefreshCooldown - dt);
@@ -4991,13 +7037,18 @@ namespace Mori.ForestSlice
 
         public void GmAddHeroLevels(string heroId, int addLevels)
         {
+            int maxCap = Mathf.Max(MaxHeroLevelCap, 75);
             if (heroId == null)
             {
                 int cnt = 0;
                 for (int i = 0; i < Heroes.Count; i++)
                 {
                     if (!Heroes[i].unlocked) continue;
-                    Heroes[i].level = Mathf.Clamp(Heroes[i].level + addLevels, 1, 30);
+                    HeroSpec h = Heroes[i];
+                    int target = Mathf.Clamp(h.level + addLevels, 1, maxCap);
+                    for (int lv = h.level; lv < target; lv++)
+                        h.spentHeroExp += GetHeroLevelUpExpCost(lv);
+                    h.level = target;
                     cnt++;
                 }
                 if (addLevels > 0 && cnt > 0) HeroLevelUpsTotal += cnt;
@@ -5009,12 +7060,35 @@ namespace Mori.ForestSlice
             {
                 HeroSpec h = FindHero(heroId);
                 if (h == null) return;
-                h.level = Mathf.Clamp(h.level + addLevels, 1, 30);
+                int target = Mathf.Clamp(h.level + addLevels, 1, maxCap);
+                for (int lv = h.level; lv < target; lv++)
+                    h.spentHeroExp += GetHeroLevelUpExpCost(lv);
+                h.level = target;
                 if (addLevels > 0) HeroLevelUpsTotal++;
                 OnDelegationChanged?.Invoke();
                 EvaluateQuestProgress();
                 OnWorldToast?.Invoke($"GM：{h.name} 等级已调至 Lv.{h.level}！", new Vector2(16.0f, 19.5f));
             }
+        }
+
+        public void GmAddAllHeroShards(int shardDelta)
+        {
+            if (shardDelta <= 0) return;
+            for (int i = 0; i < Heroes.Count; i++)
+                Heroes[i].shards += shardDelta;
+            OnWorldToast?.Invoke($"GM：全部 {Heroes.Count} 名英雄专属碎片 +{shardDelta}！", new Vector2(16.0f, 19.5f));
+        }
+
+        public void GmGrantAllBadgesAndBoxes()
+        {
+            foreach (TacticalBadgeId b in Enum.GetValues(typeof(TacticalBadgeId)))
+            {
+                if (b != TacticalBadgeId.None)
+                    AddBadge(b, 2);
+            }
+            Add(SurvRes.ChoiceResBox, 5, notifyToast: true);
+            Add(SurvRes.SpeedHourglass, 5, notifyToast: true);
+            OnWorldToast?.Invoke("GM：全 6 类战术徽章各+2 · 原料自选箱+5 · 加速沙漏+5！", new Vector2(16.0f, 19.5f));
         }
 
         public void GmUnlockAllHeroes()
@@ -5023,19 +7097,48 @@ namespace Mori.ForestSlice
                 UnlockHero(Heroes[i].id, silent: true);
             AutoAssignHeroes();
             EnsureCombatSquad();
+            if (Heroes.Count > 0)
+                OnHeroUnlocked?.Invoke(Heroes[Heroes.Count - 1]);
             EvaluateQuestProgress();
-            OnWorldToast?.Invoke("GM：已解锁全部 6 名骨干英雄！", new Vector2(16.4f, 16.2f));
+            OnWorldToast?.Invoke($"GM：已解锁全部 {Heroes.Count} 名骨干英雄！", new Vector2(16.4f, 16.2f));
         }
 
         public void GmUnlockAllHeroesAndFormations()
         {
             _gmUnlockFullSquad = true;
+            foreach (TacticalFormationId fmt in Enum.GetValues(typeof(TacticalFormationId)))
+                _unlockedFormations.Add(fmt);
+            foreach (TacticalBadgeId b in Enum.GetValues(typeof(TacticalBadgeId)))
+            {
+                if (b != TacticalBadgeId.None)
+                    OwnedBadges[b] = Mathf.Max(GetOwnedBadgeCount(b), 2);
+            }
+
             for (int i = 0; i < Heroes.Count; i++)
+            {
                 UnlockHero(Heroes[i].id, silent: true);
+                HeroSpec h = Heroes[i];
+                if (h.star < 3)
+                {
+                    h.star = 3;
+                    h.starPetals = 2;
+                }
+                h.shards = Mathf.Max(h.shards, 30);
+                for (int s = 0; s < 4; s++)
+                    h.skillLevels[s] = Mathf.Max(1, h.skillLevels[s]);
+            }
+            Add(SurvRes.HeroExp, 20000, notifyToast: false);
+            Add(SurvRes.SkillBook, 50, notifyToast: false);
+            Add(SurvRes.RecruitTicket, 10, notifyToast: false);
+            Add(SurvRes.ShardUnivEpic, 15, notifyToast: false);
+            Add(SurvRes.ShardUnivLeg, 15, notifyToast: false);
+
             AutoDeployRecommendedFormation();
             AutoAssignHeroes();
+            if (Heroes.Count > 0)
+                OnHeroUnlocked?.Invoke(Heroes[Heroes.Count - 1]);
             EvaluateQuestProgress();
-            OnWorldToast?.Invoke("GM：已解锁全部 6 名英雄、4 大战术阵型与 5 人满编上阵！", new Vector2(16.4f, 16.2f));
+            OnWorldToast?.Invoke($"GM：已解锁全{Heroes.Count}英雄(3★觉醒)、6大阵型图谱、全徽章与2万英雄经验！", new Vector2(16.4f, 16.2f));
         }
 
         public void GmSetBattleStage(int stage1Based)

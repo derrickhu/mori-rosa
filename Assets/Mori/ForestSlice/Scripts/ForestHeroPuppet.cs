@@ -25,8 +25,9 @@ namespace Mori.ForestSlice
 
     public enum ToolAnimStyle
     {
-        HatchetCleave = 0, // 斧类/重劈（阿澈、大锤）
-        WrenchSmash = 1,   // 扳手/敲击修补（小棠）
+        HatchetCleave = 0, // 斧类/重劈（阿澈、大锤、雷猛）
+        WrenchSmash = 1,   // 扳手/敲击修补（小棠、老陈头）
+        ShotgunBlast = 2,  // 双管霰弹举枪轰击 + 后坐力上扬（铁叔）
     }
 
     public sealed class OutfitTierDef
@@ -212,28 +213,147 @@ namespace Mori.ForestSlice
                     new OutfitTierDef { tier = OutfitTier.Armored, requireShelterLv = 3, tierName = "防暴重装", atlasKey = "dachui_puppet_atlas_t2", bustKey = "bust_dachui_t2" },
                 }
             },
+            ["leimeng"] = new PuppetRigProfile
+            {
+                characterId = "leimeng",
+                displayName = "雷猛",
+                baseScale = 0.95f,
+                showGroundRing = false,
+                ringTint = new Color(1.00f, 0.42f, 0.18f, 0.88f),
+                slashTint = new Color(1.00f, 0.56f, 0.22f, 1.00f),
+                toolStyle = ToolAnimStyle.HatchetCleave,
+                pelvisBase = new Vector3(0f, 0.34f, 0f),
+                legNearBase = new Vector3(-0.032f, 0.01f, 0f),
+                legFarBase = new Vector3(0.032f, 0.01f, 0f),
+                torsoBase = new Vector3(0f, -0.02f, 0f),
+                headBase = new Vector3(0.014f, 0.265f, 0f),
+                accBase = new Vector3(-0.068f, 0.14f, 0f),
+                armNearBase = new Vector3(-0.078f, 0.225f, 0f),
+                armFarBase = new Vector3(0.086f, 0.212f, 0f),
+                toolGrip = new Vector3(0.012f, -0.23f, 0f),
+                carryLocalPos = new Vector3(0.02f, 0.65f, 0f),
+                tiers = new[]
+                {
+                    new OutfitTierDef { tier = OutfitTier.Refugee, requireShelterLv = 1, tierName = "荒野猎装", atlasKey = "leimeng_puppet_atlas", bustKey = "bust_leimeng" },
+                    new OutfitTierDef { tier = OutfitTier.Reinforced, requireShelterLv = 2, tierName = "重装巡林服", atlasKey = "leimeng_puppet_atlas_t1", bustKey = "bust_leimeng_t1" },
+                    new OutfitTierDef { tier = OutfitTier.Armored, requireShelterLv = 3, tierName = "狂风破障甲", atlasKey = "leimeng_puppet_atlas_t2", bustKey = "bust_leimeng_t2" },
+                }
+            },
             ["tieshu"] = new PuppetRigProfile
             {
                 characterId = "tieshu",
                 displayName = "铁叔",
-                singleBodySpriteKey = "survivor_tieshu",
-                baseScale = 0.65f,
+                baseScale = 0.92f,
                 showGroundRing = false,
-                ringTint = new Color(0.95f, 0.72f, 0.28f, 0.85f),
-                slashTint = new Color(1f, 0.86f, 0.42f, 1f),
+                ringTint = new Color(0.95f, 0.72f, 0.28f, 0.88f),
+                slashTint = new Color(1.00f, 0.86f, 0.36f, 1.00f),
+                toolStyle = ToolAnimStyle.ShotgunBlast,
+                pelvisBase = new Vector3(0f, 0.325f, 0f),
+                legNearBase = new Vector3(-0.028f, 0.01f, 0f),
+                legFarBase = new Vector3(0.030f, 0.01f, 0f),
+                torsoBase = new Vector3(0f, -0.02f, 0f),
+                headBase = new Vector3(0.014f, 0.250f, 0f),
+                accBase = new Vector3(-0.064f, 0.150f, 0f),
+                armNearBase = new Vector3(-0.068f, 0.212f, 0f),
+                armFarBase = new Vector3(0.076f, 0.204f, 0f),
+                toolGrip = new Vector3(0.014f, -0.21f, 0f),
+                carryLocalPos = new Vector3(0.02f, 0.62f, 0f),
                 tiers = new[]
                 {
-                    new OutfitTierDef { tier = OutfitTier.Refugee, requireShelterLv = 1, tierName = "逃难初装", atlasKey = "hero_puppet_atlas", bustKey = "survivor_tieshu" },
-                    new OutfitTierDef { tier = OutfitTier.Reinforced, requireShelterLv = 2, tierName = "加固车手服", atlasKey = "hero_puppet_atlas", bustKey = "survivor_tieshu" },
-                    new OutfitTierDef { tier = OutfitTier.Armored, requireShelterLv = 3, tierName = "防弹焊甲", atlasKey = "hero_puppet_atlas", bustKey = "survivor_tieshu" },
+                    new OutfitTierDef { tier = OutfitTier.Refugee, requireShelterLv = 1, tierName = "荒野枪匠装", atlasKey = "tieshu_puppet_atlas", bustKey = "bust_tieshu" },
+                    new OutfitTierDef { tier = OutfitTier.Reinforced, requireShelterLv = 2, tierName = "加固车手服", atlasKey = "tieshu_puppet_atlas_t1", bustKey = "bust_tieshu_t1" },
+                    new OutfitTierDef { tier = OutfitTier.Armored, requireShelterLv = 3, tierName = "防弹焊甲", atlasKey = "tieshu_puppet_atlas_t2", bustKey = "bust_tieshu_t2" },
+                }
+            },
+            ["asa"] = new PuppetRigProfile
+            {
+                characterId = "asa",
+                displayName = "阿飒",
+                baseScale = 0.93f,
+                showGroundRing = false,
+                ringTint = new Color(0.98f, 0.30f, 0.20f, 0.88f),
+                slashTint = new Color(1.0f, 0.34f, 0.28f, 1f),
+                toolStyle = ToolAnimStyle.HatchetCleave,
+                pelvisBase = new Vector3(0f, 0.335f, 0f),
+                legNearBase = new Vector3(-0.025f, 0.01f, 0f),
+                legFarBase = new Vector3(0.026f, 0.01f, 0f),
+                torsoBase = new Vector3(0f, -0.02f, 0f),
+                headBase = new Vector3(0.012f, 0.250f, 0f),
+                accBase = new Vector3(-0.058f, 0.160f, 0f),
+                armNearBase = new Vector3(-0.058f, 0.205f, 0f),
+                armFarBase = new Vector3(0.064f, 0.200f, 0f),
+                toolGrip = new Vector3(0.012f, -0.22f, 0f),
+                carryLocalPos = new Vector3(0.02f, 0.63f, 0f),
+                tiers = new[]
+                {
+                    new OutfitTierDef { tier = OutfitTier.Refugee, requireShelterLv = 1, tierName = "飞爪猎装", atlasKey = "asa_puppet_atlas", bustKey = "bust_asa" },
+                    new OutfitTierDef { tier = OutfitTier.Reinforced, requireShelterLv = 2, tierName = "突袭皮甲", atlasKey = "asa_puppet_atlas_t1", bustKey = "bust_asa_t1" },
+                    new OutfitTierDef { tier = OutfitTier.Armored, requireShelterLv = 3, tierName = "血刃战铠", atlasKey = "asa_puppet_atlas_t2", bustKey = "bust_asa_t2" },
+                }
+            },
+            ["qinghe"] = new PuppetRigProfile
+            {
+                characterId = "qinghe",
+                displayName = "青禾",
+                baseScale = 0.90f,
+                showGroundRing = false,
+                ringTint = new Color(0.26f, 0.88f, 0.92f, 0.88f),
+                slashTint = new Color(0.42f, 0.92f, 1.0f, 1f),
+                toolStyle = ToolAnimStyle.ShotgunBlast,
+                pelvisBase = new Vector3(0f, 0.315f, 0f),
+                legNearBase = new Vector3(-0.024f, 0.01f, 0f),
+                legFarBase = new Vector3(0.025f, 0.01f, 0f),
+                torsoBase = new Vector3(0f, -0.02f, 0f),
+                headBase = new Vector3(0.011f, 0.240f, 0f),
+                accBase = new Vector3(-0.060f, 0.155f, 0f),
+                armNearBase = new Vector3(-0.054f, 0.196f, 0f),
+                armFarBase = new Vector3(0.058f, 0.190f, 0f),
+                toolGrip = new Vector3(0.012f, -0.20f, 0f),
+                carryLocalPos = new Vector3(0.02f, 0.60f, 0f),
+                tiers = new[]
+                {
+                    new OutfitTierDef { tier = OutfitTier.Refugee, requireShelterLv = 1, tierName = "寒林猎衣", atlasKey = "qinghe_puppet_atlas", bustKey = "bust_qinghe" },
+                    new OutfitTierDef { tier = OutfitTier.Reinforced, requireShelterLv = 2, tierName = "霜毛披肩", atlasKey = "qinghe_puppet_atlas_t1", bustKey = "bust_qinghe_t1" },
+                    new OutfitTierDef { tier = OutfitTier.Armored, requireShelterLv = 3, tierName = "极寒猎铠", atlasKey = "qinghe_puppet_atlas_t2", bustKey = "bust_qinghe_t2" },
+                }
+            },
+            ["zhoudr"] = new PuppetRigProfile
+            {
+                characterId = "zhoudr",
+                displayName = "周博士",
+                baseScale = 0.93f,
+                showGroundRing = false,
+                ringTint = new Color(0.48f, 0.52f, 1.0f, 0.88f),
+                slashTint = new Color(0.38f, 0.86f, 1.0f, 1f),
+                toolStyle = ToolAnimStyle.WrenchSmash,
+                pelvisBase = new Vector3(0f, 0.330f, 0f),
+                legNearBase = new Vector3(-0.027f, 0.01f, 0f),
+                legFarBase = new Vector3(0.028f, 0.01f, 0f),
+                torsoBase = new Vector3(0f, -0.02f, 0f),
+                headBase = new Vector3(0.012f, 0.255f, 0f),
+                accBase = new Vector3(-0.062f, 0.160f, 0f),
+                armNearBase = new Vector3(-0.064f, 0.212f, 0f),
+                armFarBase = new Vector3(0.070f, 0.204f, 0f),
+                toolGrip = new Vector3(0.012f, -0.22f, 0f),
+                carryLocalPos = new Vector3(0.02f, 0.63f, 0f),
+                tiers = new[]
+                {
+                    new OutfitTierDef { tier = OutfitTier.Refugee, requireShelterLv = 1, tierName = "科工白褂", atlasKey = "zhoudr_puppet_atlas", bustKey = "bust_zhoudr" },
+                    new OutfitTierDef { tier = OutfitTier.Reinforced, requireShelterLv = 2, tierName = "绝缘防护服", atlasKey = "zhoudr_puppet_atlas_t1", bustKey = "bust_zhoudr_t1" },
+                    new OutfitTierDef { tier = OutfitTier.Armored, requireShelterLv = 3, tierName = "超导电磁甲", atlasKey = "zhoudr_puppet_atlas_t2", bustKey = "bust_zhoudr_t2" },
                 }
             },
         };
 
         public static PuppetRigProfile GetProfile(string characterId)
         {
-            if (!string.IsNullOrEmpty(characterId) && Profiles.TryGetValue(characterId, out PuppetRigProfile p))
-                return p;
+            if (!string.IsNullOrEmpty(characterId))
+            {
+                if (characterId == "hunter")
+                    return Profiles["leimeng"];
+                if (Profiles.TryGetValue(characterId, out PuppetRigProfile p))
+                    return p;
+            }
             return Profiles["ache"];
         }
 
@@ -252,6 +372,15 @@ namespace Mori.ForestSlice
                 return t.bustKey;
             OutfitTierDef baseDef = p.GetTier(OutfitTier.Refugee);
             return baseDef != null ? baseDef.bustKey : "bust_leader";
+        }
+
+        public static string ResolveFullBodyKey(string characterId, OutfitTier tier = OutfitTier.Refugee)
+        {
+            if (string.IsNullOrEmpty(characterId) || characterId == "ache" || characterId == "leader")
+                return "fullbody_leader";
+            if (characterId == "hunter")
+                return "fullbody_leimeng";
+            return "fullbody_" + characterId;
         }
     }
 
@@ -272,12 +401,14 @@ namespace Mori.ForestSlice
         }
 
         static readonly Dictionary<string, AtlasPack> AtlasCache = new Dictionary<string, AtlasPack>();
-        static Sprite _spSlashArc, _spGroundRing;
+        static Sprite _spSlashArc, _spShotgunBlast, _spGroundRing;
 
         public readonly PuppetRigProfile Profile;
         public readonly Transform Root;
         public OutfitTier CurrentTier { get; private set; } = OutfitTier.Refugee;
         public string ActiveAtlasKey { get; private set; }
+        bool _usingEmergencyFallbackAtlas;
+        float _atlasRetryTimer;
 
         int _lastBaseOrder = int.MinValue;
         readonly Transform _flipRoot;
@@ -380,10 +511,11 @@ namespace Mori.ForestSlice
             _armNear = MakePart(_torso, "ArmNear", Profile.armNearBase, null, 11, out _armNearSr);
             _tool = MakePart(_armNear, "Tool", Profile.toolGrip, null, 9, out _toolSr);
 
-            _slashTr = MakeChild(_flipRoot, "SlashArc", new Vector3(0.28f, 0.44f, 0f));
-            _slashTr.localScale = new Vector3(0.95f, 0.95f, 1f);
+            bool isShotgun = Profile.toolStyle == ToolAnimStyle.ShotgunBlast;
+            _slashTr = MakeChild(_flipRoot, "SlashArc", isShotgun ? new Vector3(0.46f, 0.50f, 0f) : new Vector3(0.28f, 0.44f, 0f));
+            _slashTr.localScale = isShotgun ? new Vector3(0.88f, 0.76f, 1f) : new Vector3(0.95f, 0.95f, 1f);
             _slashSr = _slashTr.gameObject.AddComponent<SpriteRenderer>();
-            _slashSr.sprite = _spSlashArc;
+            _slashSr.sprite = isShotgun ? _spShotgunBlast : _spSlashArc;
             _slashSr.sortingOrder = 13;
             _slashSr.color = new Color(Profile.slashTint.r, Profile.slashTint.g, Profile.slashTint.b, 0f);
 
@@ -436,13 +568,55 @@ namespace Mori.ForestSlice
             string targetKey = t != null ? t.atlasKey : (baseDef != null ? baseDef.atlasKey : "hero_puppet_atlas");
             AtlasPack pack = LoadOrGetAtlas(targetKey);
             bool usedNativeTierAtlas = pack != null;
+            string resolvedKey = targetKey;
 
             if (pack == null && autoFallbackToBase && baseDef != null)
+            {
                 pack = LoadOrGetAtlas(baseDef.atlasKey);
+                if (pack != null)
+                    resolvedKey = baseDef.atlasKey;
+            }
+
+            // 仅当专属骨骼图集尚未落盘（texture == null）时临时借用体型相近图集兜底，一旦落盘立即自动热切换回本尊！
+            if (pack == null)
+            {
+                string fallbackKey;
+                switch (Profile.characterId)
+                {
+                    case "leimeng":
+                    case "hunter":
+                        fallbackKey = "dachui_puppet_atlas";
+                        break;
+                    case "tieshu":
+                    case "zhoudr":
+                        fallbackKey = "laochentou_puppet_atlas";
+                        break;
+                    case "asa":
+                        fallbackKey = "xiaotang_puppet_atlas";
+                        break;
+                    case "qinghe":
+                        fallbackKey = "linyan_puppet_atlas";
+                        break;
+                    default:
+                        fallbackKey = "hero_puppet_atlas";
+                        break;
+                }
+                pack = LoadOrGetAtlas(fallbackKey) ?? LoadOrGetAtlas("hero_puppet_atlas");
+                if (pack != null)
+                {
+                    resolvedKey = fallbackKey;
+                    _usingEmergencyFallbackAtlas = true;
+                    _atlasRetryTimer = 1.5f;
+                }
+            }
+            else
+            {
+                _usingEmergencyFallbackAtlas = false;
+            }
 
             if (pack != null)
             {
-                ActiveAtlasKey = usedNativeTierAtlas ? targetKey : (baseDef != null ? baseDef.atlasKey : targetKey);
+                ActiveAtlasKey = resolvedKey;
                 ApplyAtlasPack(pack);
             }
 
@@ -494,13 +668,27 @@ namespace Mori.ForestSlice
             _toolSr.sprite = pack.tool;
         }
 
-        void EnsureAtlasAlive()
+        void EnsureAtlasAlive(float dt)
         {
             if (_atlas == null || _atlas.tex == null || _headOpenSp == null || _torsoSr.sprite == null)
+            {
                 SetSkinTier(CurrentTier, autoFallbackToBase: true);
-            if (_spSlashArc == null || _spGroundRing == null)
+            }
+            else if (_usingEmergencyFallbackAtlas)
+            {
+                _atlasRetryTimer -= dt;
+                if (_atlasRetryTimer <= 0f)
+                {
+                    _atlasRetryTimer = 1.5f;
+                    OutfitTierDef baseDef = Profile.GetTier(OutfitTier.Refugee);
+                    if (baseDef != null && Resources.Load<Texture2D>("ForestArt/" + baseDef.atlasKey) != null)
+                        SetSkinTier(CurrentTier, autoFallbackToBase: true);
+                }
+            }
+            if (_spSlashArc == null || _spShotgunBlast == null || _spGroundRing == null)
                 EnsureSharedFx();
-            if (_slashSr != null && _slashSr.sprite == null) _slashSr.sprite = _spSlashArc;
+            if (_slashSr != null && _slashSr.sprite == null)
+                _slashSr.sprite = Profile.toolStyle == ToolAnimStyle.ShotgunBlast ? _spShotgunBlast : _spSlashArc;
             if (_ringSr != null && _ringSr.sprite == null) _ringSr.sprite = _spGroundRing;
         }
 
@@ -554,6 +742,7 @@ namespace Mori.ForestSlice
                 if (_headgearSr != null) _headgearSr.sortingOrder = b + 8;
                 if (_toolSr != null) _toolSr.sortingOrder = b + 8;
                 if (_carrySr != null) _carrySr.sortingOrder = b + 9;
+                if (_armNearSr != null) _armNearSr.sortingOrder = b + 10;
                 if (_slashSr != null) _slashSr.sortingOrder = b + 11;
             }
             if (shadowTr != null) shadowTr.localPosition = isoWorldPos;
@@ -611,7 +800,7 @@ namespace Mori.ForestSlice
                 return;
             }
 
-            EnsureAtlasAlive();
+            EnsureAtlasAlive(dt);
             _phase += dt;
 
             if (_ringSr != null && _ringSr.gameObject.activeSelf)
@@ -653,10 +842,20 @@ namespace Mori.ForestSlice
                     _legNear.localRotation = Quaternion.identity;
                     _legFar.localRotation = Quaternion.identity;
 
-                    _armNear.localRotation = Quaternion.Euler(0f, 0f, 10f + b * 4.0f);
-                    _armFar.localRotation = Quaternion.Euler(0f, 0f, -4f - b * 3.0f);
-                    _toolSr.enabled = true;
-                    _tool.localRotation = Quaternion.Euler(0f, 0f, -80f + b * 2.5f);
+                    if (Profile.toolStyle == ToolAnimStyle.ShotgunBlast)
+                    {
+                        _armNear.localRotation = Quaternion.Euler(0f, 0f, 24f + b * 3.0f);
+                        _armFar.localRotation = Quaternion.Euler(0f, 0f, 44f + b * 2.5f);
+                        _toolSr.enabled = true;
+                        _tool.localRotation = Quaternion.Euler(0f, 0f, -92f + b * 2.0f);
+                    }
+                    else
+                    {
+                        _armNear.localRotation = Quaternion.Euler(0f, 0f, 10f + b * 4.0f);
+                        _armFar.localRotation = Quaternion.Euler(0f, 0f, -4f - b * 3.0f);
+                        _toolSr.enabled = true;
+                        _tool.localRotation = Quaternion.Euler(0f, 0f, -80f + b * 2.5f);
+                    }
 
                     targetAcc = Mathf.Sin(_phase * 4.2f) * 7f;
                     break;
@@ -712,6 +911,13 @@ namespace Mori.ForestSlice
                         _toolSr.enabled = false;
                         _carryPivot.localPosition = Profile.carryLocalPos + new Vector3(0f, bob * 0.4f, 0f);
                     }
+                    else if (Profile.toolStyle == ToolAnimStyle.ShotgunBlast)
+                    {
+                        _armNear.localRotation = Quaternion.Euler(0f, 0f, 28f - s * (armAmp * 0.35f));
+                        _armFar.localRotation = Quaternion.Euler(0f, 0f, 48f - s * (armAmp * 0.30f));
+                        _toolSr.enabled = true;
+                        _tool.localRotation = Quaternion.Euler(0f, 0f, -96f + s * (isWalk ? 3.5f : 5.5f));
+                    }
                     else
                     {
                         _armNear.localRotation = Quaternion.Euler(0f, 0f, -s * armAmp + 6f);
@@ -728,7 +934,8 @@ namespace Mori.ForestSlice
                 {
                     _toolSr.enabled = true;
                     _chopCycle += dt;
-                    float period = Profile.toolStyle == ToolAnimStyle.WrenchSmash ? 0.46f : 0.56f;
+                    bool isShotgun = Profile.toolStyle == ToolAnimStyle.ShotgunBlast;
+                    float period = isShotgun ? 0.54f : (Profile.toolStyle == ToolAnimStyle.WrenchSmash ? 0.46f : 0.56f);
                     if (_chopCycle >= period)
                     {
                         _chopCycle -= period;
@@ -736,10 +943,62 @@ namespace Mori.ForestSlice
                     }
 
                     float u = _chopCycle / period;
-                    float torsoAng, armNearAng, armFarAng, toolAng, legNearAng, pelvisY;
+                    float torsoAng, armNearAng, armFarAng, toolAng, legNearAng, pelvisX = 0f, pelvisY;
                     bool fierceFace = false;
 
-                    if (u < 0.46f)
+                    if (isShotgun)
+                    {
+                        // 双手端平霰弹枪前倾瞄准 -> 金色铁砂火光轰击 -> 干脆利落的上扬后坐力震退 -> 回膛复位！
+                        if (u < 0.24f)
+                        {
+                            float t = Smooth01(u / 0.24f);
+                            torsoAng = Mathf.Lerp(-2f, -10f, t);
+                            armNearAng = Mathf.Lerp(26f, 82f, t);
+                            armFarAng = Mathf.Lerp(46f, 76f, t);
+                            toolAng = Mathf.Lerp(-94f, -170f, t);
+                            legNearAng = Mathf.Lerp(0f, -14f, t);
+                            pelvisX = Mathf.Lerp(0f, 0.018f, t);
+                            pelvisY = Mathf.Lerp(0f, -0.014f, t);
+                            fierceFace = t > 0.55f;
+                        }
+                        else if (u < 0.54f)
+                        {
+                            if (!_chopHitFiredThisSwing)
+                            {
+                                _chopHitFiredThisSwing = true;
+                                _slashTr.localPosition = new Vector3(0.46f, 0.50f, 0f);
+                                _slashTr.localScale = new Vector3(0.88f, 0.76f, 1f);
+                                _slashAlpha = 1.0f;
+                                OnChopImpact?.Invoke();
+                            }
+
+                            float r = (u - 0.24f) / 0.30f;
+                            float kick = r < 0.38f
+                                ? (1f - (1f - r / 0.38f) * (1f - r / 0.38f))
+                                : Mathf.Lerp(1f, 0.55f, Smooth01((r - 0.38f) / 0.62f));
+
+                            torsoAng = Mathf.Lerp(-10f, 15f, kick);
+                            armNearAng = Mathf.Lerp(82f, 110f, kick);
+                            armFarAng = Mathf.Lerp(76f, 100f, kick);
+                            toolAng = Mathf.Lerp(-170f, -146f, kick);
+                            legNearAng = Mathf.Lerp(-14f, 8f, kick);
+                            pelvisX = Mathf.Lerp(0.018f, -0.042f, kick);
+                            pelvisY = Mathf.Lerp(-0.014f, 0.016f, kick);
+                            fierceFace = true;
+                        }
+                        else
+                        {
+                            float t = Smooth01((u - 0.54f) / 0.46f);
+                            torsoAng = Mathf.Lerp(8.8f, -2f, t);
+                            armNearAng = Mathf.Lerp(97f, 26f, t);
+                            armFarAng = Mathf.Lerp(89f, 46f, t);
+                            toolAng = Mathf.Lerp(-157f, -94f, t);
+                            legNearAng = Mathf.Lerp(3f, 0f, t);
+                            pelvisX = Mathf.Lerp(-0.020f, 0f, t);
+                            pelvisY = Mathf.Lerp(0.008f, 0f, t);
+                        }
+                    }
+                    else if (u < 0.46f)
                     {
                         float t = Smooth01(u / 0.46f);
                         torsoAng = Mathf.Lerp(-4f, 22f, t);
@@ -764,6 +1023,8 @@ namespace Mori.ForestSlice
                         if (u >= 0.56f && !_chopHitFiredThisSwing)
                         {
                             _chopHitFiredThisSwing = true;
+                            _slashTr.localPosition = new Vector3(0.28f, 0.44f, 0f);
+                            _slashTr.localScale = new Vector3(0.95f, 0.95f, 1f);
                             _slashAlpha = 0.95f;
                             OnChopImpact?.Invoke();
                         }
@@ -790,7 +1051,7 @@ namespace Mori.ForestSlice
                         pelvisY = Mathf.Lerp(-0.035f, 0f, t);
                     }
 
-                    _pelvis.localPosition = Profile.pelvisBase + new Vector3(0f, pelvisY, 0f);
+                    _pelvis.localPosition = Profile.pelvisBase + new Vector3(pelvisX, pelvisY, 0f);
                     _pelvis.localScale = Vector3.one;
                     _torso.localRotation = Quaternion.Euler(0f, 0f, torsoAng);
                     _head.localRotation = Quaternion.Euler(0f, 0f, -torsoAng * 0.35f);
@@ -878,7 +1139,40 @@ namespace Mori.ForestSlice
         static void EnsureSharedFx()
         {
             if (_spSlashArc == null) _spSlashArc = BuildSlashArcSprite(128);
+            if (_spShotgunBlast == null) _spShotgunBlast = BuildShotgunBlastSprite(128);
             if (_spGroundRing == null) _spGroundRing = BuildHeroRingSprite(96);
+        }
+
+        static Sprite BuildShotgunBlastSprite(int size)
+        {
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+            var px = new Color32[size * size];
+            Vector2 origin = new Vector2(size * 0.16f, size * 0.50f);
+            float maxR = size * 0.80f;
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    Vector2 d = new Vector2(x - origin.x, y - origin.y);
+                    float r = d.magnitude / maxR;
+                    if (r > 1f) continue;
+                    float ang = Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg;
+                    float core = Mathf.Clamp01(1f - r * 3.4f);
+                    float cone = (ang > -34f && ang < 34f && d.x > -4f)
+                        ? Mathf.Clamp01(1f - Mathf.Abs(ang) / 34f) * Mathf.Clamp01(1f - r)
+                        : 0f;
+                    float rays = Mathf.Pow(Mathf.Max(0f, Mathf.Cos(ang * 0.34f)), 4f) * cone;
+                    float a = Mathf.Clamp01(core * 1.1f + cone * 0.55f + rays * 0.65f);
+                    if (a <= 0.01f) continue;
+                    Color c = Color.Lerp(new Color(1f, 0.72f, 0.18f, a), new Color(1f, 0.98f, 0.86f, a), Mathf.Clamp01(core + rays * 0.5f));
+                    px[y * size + x] = c;
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply();
+            var sp = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.18f, 0.5f), 128f);
+            sp.hideFlags = HideFlags.DontUnloadUnusedAsset;
+            return sp;
         }
 
         static Sprite BuildSlashArcSprite(int size)

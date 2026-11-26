@@ -17,7 +17,7 @@ OUT_FONT = REPO / "Assets" / "Mori" / "ForestSlice" / "Resources" / "Fonts" / "M
 SRC_FONT = pathlib.Path("/Users/rosa/rosa_games/game_assets/black-rosa/字体/NotoSansSC[wght].ttf")
 
 EXTRAS = (
-    "，。！？：；、…—·「」『』（）《》【】％×÷≤≥°＋－＝／★☆✔✕✓✗"
+    "，。！？：；、…—·「」『』（）《》【】％×÷≤≥°＋－＝／★☆✓√▶▷◀◁▲▼◆◇●○←→↑↓"
     "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
     " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
 )

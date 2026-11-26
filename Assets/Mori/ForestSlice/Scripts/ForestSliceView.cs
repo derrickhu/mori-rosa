@@ -43,6 +43,24 @@ namespace Mori.ForestSlice
         readonly List<Falling> _falling = new List<Falling>();
         readonly List<Particle> _particles = new List<Particle>();
         readonly List<Transform> _fog = new List<Transform>();
+        readonly List<EdgeWildlifeInst> _edgeWildlife = new List<EdgeWildlifeInst>(4);
+
+        sealed class EdgeWildlifeInst
+        {
+            public bool isDeer;
+            public Vector2 anchorGrid;
+            public Vector2 patrolTangentWorld;
+            public float offset;
+            public float targetOffset;
+            public float pauseTimer;
+            public float respawnCooldown;
+            public float phase;
+            public float baseScale;
+            public Transform tr;
+            public SpriteRenderer sr;
+            public GameObject shadowGo;
+            public ForestSpriteFlipbook flipbook;
+        }
 
         Sprite[] _litTrees, _deepTrees, _stumpSprites, _tuftSprites, _leafSprites;
         Sprite _treeShadow;
@@ -307,6 +325,8 @@ namespace Mori.ForestSlice
 
             for (int i = 0; i < removedKeys.Count; i++)
                 _cellTrees.Remove(removedKeys[i]);
+
+            SyncEdgeWildlifeAnchors();
         }
 
         bool IsNearClearedPoint(float gx, float gy, float maxDist)
@@ -697,6 +717,253 @@ namespace Mori.ForestSlice
 
             for (int i = 0; i < _fog.Count; i++)
                 _fog[i].position += new Vector3(0.06f * dt * (1f + i % 3 * 0.3f), 0f, 0f);
+
+            TickEdgeWildlife(dt);
+        }
+
+        // ---------------- L4 林缘动态野生鹿猪巡游与啃草 ----------------
+        void SyncEdgeWildlifeAnchors()
+        {
+            if (Map == null || _moduleRoot == null) return;
+
+            const int desiredCount = 2;
+            while (_edgeWildlife.Count < desiredCount)
+            {
+                int idx = _edgeWildlife.Count;
+                bool isDeer = idx % 2 == 0;
+                Sprite fallback = ForestArt.Get(isDeer ? "deer" : "boar", () => ForestPlaceholderArt.Survivor(9));
+                string stripKey = isDeer ? "anim_deer" : "anim_boar";
+                var fb = new ForestSpriteFlipbook(
+                    stripKey,
+                    frameCount: 3,
+                    mode: FlipbookPlayMode.PingPongAll,
+                    fps: 5.5f,
+                    fallbackSprite: fallback,
+                    ppu: 256f,
+                    pivotY: 0.08f,
+                    phaseOffset: idx * 1.35f);
+
+                var go = new GameObject(isDeer ? "EdgeWildDeer_" + idx : "EdgeWildBoar_" + idx);
+                go.transform.SetParent(_moduleRoot, false);
+                var sr = go.AddComponent<SpriteRenderer>();
+                fb.ApplyTo(sr, 0f, moving: true);
+
+                float baseSc = isDeer ? 0.92f : 0.88f;
+                go.transform.localScale = new Vector3(baseSc, baseSc, 1f);
+                GameObject sh = CreateShadow(0f, 0f, isDeer ? 0.54f : 0.56f, 0.48f);
+
+                var inst = new EdgeWildlifeInst
+                {
+                    isDeer = isDeer,
+                    anchorGrid = Vector2.zero,
+                    patrolTangentWorld = new Vector2(0.88f, 0.44f).normalized,
+                    offset = 0f,
+                    targetOffset = idx % 2 == 0 ? 0.45f : -0.45f,
+                    pauseTimer = 0.8f + idx * 1.1f,
+                    respawnCooldown = 0f,
+                    phase = idx * 2.1f,
+                    baseScale = baseSc,
+                    tr = go.transform,
+                    sr = sr,
+                    shadowGo = sh,
+                    flipbook = fb,
+                };
+
+                if (!TryAssignEdgeWildlifeSpot(inst, idx))
+                {
+                    go.SetActive(false);
+                    if (sh != null) sh.SetActive(false);
+                }
+                _edgeWildlife.Add(inst);
+            }
+
+            for (int i = 0; i < _edgeWildlife.Count; i++)
+            {
+                EdgeWildlifeInst inst = _edgeWildlife[i];
+                if (inst.respawnCooldown > 0f) continue;
+                bool valid = inst.anchorGrid.sqrMagnitude > 0.1f && IsValidEdgeWildlifeCell(
+                    Mathf.FloorToInt(inst.anchorGrid.x),
+                    Mathf.FloorToInt(inst.anchorGrid.y));
+                if (!valid)
+                {
+                    bool placed = TryAssignEdgeWildlifeSpot(inst, i);
+                    if (inst.tr != null) inst.tr.gameObject.SetActive(placed);
+                    if (inst.shadowGo != null) inst.shadowGo.SetActive(placed);
+                }
+            }
+        }
+
+        bool IsValidEdgeWildlifeCell(int x, int y)
+        {
+            if (x < 1 || y < 1 || x >= ForestMap.N - 1 || y >= ForestMap.N - 1) return false;
+            if (!Map.IsCleared(x, y) || ForestMap.IsNearRiver(x, y)) return false;
+            if (_occupied.Contains(Key(x, y))) return false;
+            // 避开核心起步建筑广场，专驻林缘草坡自然觅食
+            if (x >= 13 && x <= 20 && y >= 17 && y <= 21) return false;
+            bool touchesForest = !Map.IsCleared(x - 1, y) || !Map.IsCleared(x + 1, y) ||
+                                 !Map.IsCleared(x, y - 1) || !Map.IsCleared(x, y + 1);
+            return touchesForest;
+        }
+
+        bool TryAssignEdgeWildlifeSpot(EdgeWildlifeInst inst, int slotIndex)
+        {
+            var candidates = new List<Vector2Int>(32);
+            for (int x = 2; x < ForestMap.N - 2; x++)
+            {
+                for (int y = 2; y < ForestMap.N - 2; y++)
+                {
+                    if (IsValidEdgeWildlifeCell(x, y))
+                        candidates.Add(new Vector2Int(x, y));
+                }
+            }
+            if (candidates.Count == 0) return false;
+
+            // 让多只林缘野生动物自然分散在不同方位林缘
+            int pickIdx = ((slotIndex * 11) + _rng.Next(candidates.Count)) % candidates.Count;
+            for (int attempt = 0; attempt < candidates.Count; attempt++)
+            {
+                Vector2Int c = candidates[(pickIdx + attempt) % candidates.Count];
+                Vector2 g = new Vector2(c.x + 0.5f, c.y + 0.5f);
+                bool tooClose = false;
+                for (int k = 0; k < _edgeWildlife.Count; k++)
+                {
+                    if (_edgeWildlife[k] == inst || _edgeWildlife[k].tr == null || !_edgeWildlife[k].tr.gameObject.activeSelf)
+                        continue;
+                    if (Vector2.Distance(_edgeWildlife[k].anchorGrid, g) < 4.2f)
+                    {
+                        tooClose = true;
+                        break;
+                    }
+                }
+                if (tooClose) continue;
+
+                inst.anchorGrid = g;
+                // 选取两端都在已开垦草地内的巡游切线方向（±0.45 世界单位往返）
+                Vector2 baseW = Iso(g.x, g.y);
+                Vector2[] dirs =
+                {
+                    new Vector2(0.894f, 0.447f),
+                    new Vector2(0.894f, -0.447f),
+                    new Vector2(1f, 0f),
+                };
+                inst.patrolTangentWorld = dirs[slotIndex % dirs.Length];
+                for (int d = 0; d < dirs.Length; d++)
+                {
+                    Vector2 td = dirs[(slotIndex + d) % dirs.Length];
+                    Vector2 gA = WorldToGrid(baseW + td * 0.45f);
+                    Vector2 gB = WorldToGrid(baseW - td * 0.45f);
+                    if (Map.IsCleared(Mathf.FloorToInt(gA.x), Mathf.FloorToInt(gA.y)) &&
+                        Map.IsCleared(Mathf.FloorToInt(gB.x), Mathf.FloorToInt(gB.y)))
+                    {
+                        inst.patrolTangentWorld = td;
+                        break;
+                    }
+                }
+                inst.offset = 0f;
+                inst.targetOffset = slotIndex % 2 == 0 ? 0.45f : -0.45f;
+                Vector3 wp = Iso(g.x, g.y);
+                if (inst.tr != null)
+                {
+                    inst.tr.gameObject.SetActive(true);
+                    inst.tr.localPosition = wp;
+                    inst.sr.sortingOrder = Mathf.RoundToInt(-wp.y * 100f) + 2;
+                }
+                if (inst.shadowGo != null)
+                {
+                    inst.shadowGo.SetActive(true);
+                    inst.shadowGo.transform.localPosition = wp;
+                }
+                return true;
+            }
+            return false;
+        }
+
+        void TickEdgeWildlife(float dt)
+        {
+            for (int i = 0; i < _edgeWildlife.Count; i++)
+            {
+                EdgeWildlifeInst a = _edgeWildlife[i];
+                if (a.respawnCooldown > 0f)
+                {
+                    a.respawnCooldown -= dt;
+                    if (a.respawnCooldown <= 0f)
+                    {
+                        bool placed = TryAssignEdgeWildlifeSpot(a, i);
+                        if (a.tr != null) a.tr.gameObject.SetActive(placed);
+                        if (a.shadowGo != null) a.shadowGo.SetActive(placed);
+                    }
+                    continue;
+                }
+
+                if (a.tr == null || !a.tr.gameObject.activeSelf) continue;
+                a.phase += dt;
+
+                Vector2 baseW = Iso(a.anchorGrid.x, a.anchorGrid.y);
+                bool movingNow = false;
+
+                if (a.pauseTimer > 0f)
+                {
+                    a.pauseTimer -= dt;
+                    a.flipbook?.ApplyTo(a.sr, dt, moving: true, speedMul: 0.48f);
+                    float br = Mathf.Sin(a.phase * 3.1f) * 0.014f;
+                    a.tr.localScale = new Vector3(a.baseScale * (1f - br * 0.6f), a.baseScale * (1f + br), 1f);
+                    if (a.pauseTimer <= 0f)
+                        a.targetOffset = a.offset >= 0f ? -0.45f : 0.45f;
+                }
+                else
+                {
+                    float prevOff = a.offset;
+                    a.offset = Mathf.MoveTowards(a.offset, a.targetOffset, 0.34f * dt);
+                    Vector2 candW = baseW + a.patrolTangentWorld * a.offset;
+                    Vector2 cg = WorldToGrid(candW);
+                    if (!Map.IsCleared(Mathf.FloorToInt(cg.x), Mathf.FloorToInt(cg.y)) ||
+                        ForestMap.RiverDistance(cg.x, cg.y) < 1.35f)
+                    {
+                        a.offset = prevOff;
+                        a.pauseTimer = 1.8f + (float)_rng.NextDouble() * 1.4f;
+                    }
+                    else
+                    {
+                        float deltaX = (a.patrolTangentWorld.x * (a.targetOffset - prevOff));
+                        if (Mathf.Abs(deltaX) > 0.0001f)
+                            a.sr.flipX = deltaX > 0f;
+                        movingNow = Mathf.Abs(a.offset - prevOff) > 0.00005f;
+                        if (Mathf.Abs(a.offset - a.targetOffset) < 0.01f)
+                            a.pauseTimer = 1.9f + (float)_rng.NextDouble() * 1.8f;
+                    }
+
+                    a.flipbook?.ApplyTo(a.sr, dt, moving: true, speedMul: movingNow ? 1.08f : 0.48f);
+                    a.tr.localScale = new Vector3(a.baseScale, a.baseScale, 1f);
+                }
+
+                Vector2 curW = baseW + a.patrolTangentWorld * a.offset;
+                float hop = movingNow ? Mathf.Abs(Mathf.Sin(a.phase * 7.8f)) * 0.024f : 0f;
+                a.tr.localPosition = new Vector3(curW.x, curW.y + hop, 0f);
+                a.sr.sortingOrder = Mathf.RoundToInt(-curW.y * 100f) + 2;
+                if (a.shadowGo != null)
+                    a.shadowGo.transform.localPosition = new Vector3(curW.x, curW.y, 0f);
+            }
+        }
+
+        public bool TryHuntEdgeWildlifeAtWorld(Vector2 worldClick, float hitRadius, out Vector2 huntedGrid)
+        {
+            for (int i = 0; i < _edgeWildlife.Count; i++)
+            {
+                EdgeWildlifeInst a = _edgeWildlife[i];
+                if (a.respawnCooldown > 0f || a.tr == null || !a.tr.gameObject.activeSelf) continue;
+                Vector2 center = (Vector2)a.tr.localPosition + new Vector2(0f, 0.24f);
+                if (Vector2.Distance(worldClick, center) <= hitRadius)
+                {
+                    huntedGrid = WorldToGrid(a.tr.localPosition);
+                    BurstLeaves(a.tr.localPosition + new Vector3(0f, 0.28f, 0f), 10);
+                    a.tr.gameObject.SetActive(false);
+                    if (a.shadowGo != null) a.shadowGo.SetActive(false);
+                    a.respawnCooldown = 18f + (float)_rng.NextDouble() * 8f;
+                    return true;
+                }
+            }
+            huntedGrid = Vector2.zero;
+            return false;
         }
 
         static void Kill(GameObject go)

@@ -24,35 +24,37 @@ namespace Mori.ForestSlice
                 SurvRes.Veggie, SurvRes.Cloth, SurvRes.Herb,
                 SurvRes.Fish, SurvRes.Meat, SurvRes.Pelt,
             },
-            // Tab 1: 建材五金 (6)
+            // Tab 1: 建材五金 (9)
             new[]
             {
                 SurvRes.Plank, SurvRes.WoodBed, SurvRes.IronBeam,
                 SurvRes.Nails, SurvRes.IronIngot, SurvRes.MetalPipe,
+                SurvRes.Parts, SurvRes.Blueprint, SurvRes.SpeedHourglass,
             },
-            // Tab 2: 餐衣医药 (11)
+            // Tab 2: 餐衣医药 (12)
             new[]
             {
                 SurvRes.RoastVeggie, SurvRes.VeggieSoup, SurvRes.GrillFish,
                 SurvRes.SmokedMeat, SurvRes.LinenShirt, SurvRes.LeatherBoots,
                 SurvRes.FurCoat, SurvRes.PlateArmor, SurvRes.HerbPoultice,
-                SurvRes.WarmTea, SurvRes.MedKit,
+                SurvRes.WarmTea, SurvRes.MedKit, SurvRes.Ration,
             },
-            // Tab 3: 种子通货 (9)
+            // Tab 3: 英雄农牧 (12)
             new[]
             {
-                SurvRes.SeedVeggie, SurvRes.SeedFlax, SurvRes.SeedHerb,
-                SurvRes.SeedGolden, SurvRes.Compost, SurvRes.Ration,
-                SurvRes.Parts, SurvRes.Blueprint, SurvRes.HeroMedal,
+                SurvRes.HeroExp, SurvRes.RecruitTicket, SurvRes.SkillBook,
+                SurvRes.ShardUnivEpic, SurvRes.ShardUnivLeg, SurvRes.ChoiceResBox,
+                SurvRes.HeroMedal, SurvRes.SeedVeggie, SurvRes.SeedFlax,
+                SurvRes.SeedHerb, SurvRes.SeedGolden, SurvRes.Compost,
             },
         };
 
         static readonly string[] CategoryTitles =
         {
             "原材采集(9)",
-            "建材五金(6)",
-            "餐衣医药(11)",
-            "种子通货(9)",
+            "建材五金(9)",
+            "餐衣医药(12)",
+            "英雄农牧(12)",
         };
 
         static readonly int[] AmountOptions = { 5, 20, 100 };
@@ -333,11 +335,11 @@ namespace Mori.ForestSlice
             backdropBtn.onClick.AddListener(ClosePanel);
             _modalRootGo = backdropRt.gameObject;
 
-            // 主卡片外框 (668 x 968)
+            // 主卡片外框 (668 x 1068)
             Image cardOuter = ForestUiWidgets.MakeSlicedImage(
                 "GmCardOuter", backdropRt, ForestComicUiSkin.DialogOuter, Color.white,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
-                Vector2.zero, new Vector2(668f, 968f), true);
+                Vector2.zero, new Vector2(668f, 1068f), true);
 
             ForestUiWidgets.MakeText(
                 "HeaderTitle", cardOuter.transform, "★ GM 开发者调试台", 24, ForestUiWidgets.WarmGold,
@@ -345,15 +347,15 @@ namespace Mori.ForestSlice
                 new Vector2(-16f, -14f), new Vector2(520f, 38f), outline: true);
 
             ForestUiWidgets.MakeJellyButton(
-                "BtnClose", cardOuter.transform, ForestComicUiSkin.BtnRed, "✕", 22,
+                "BtnClose", cardOuter.transform, ForestComicUiSkin.BtnRed, "×", 26,
                 new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-14f, -11f), new Vector2(50f, 44f),
                 ClosePanel, out _);
 
-            // 暖羊皮纸内衬 (640 x 886)
+            // 暖羊皮纸内衬 (640 x 986)
             Image inner = ForestUiWidgets.MakeSlicedImage(
                 "ParchmentBody", cardOuter.transform, ForestComicUiSkin.ParchmentPanel, Color.white,
                 new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
-                new Vector2(0f, -66f), new Vector2(640f, 886f), false);
+                new Vector2(0f, -66f), new Vector2(640f, 986f), false);
             Transform body = inner.transform;
 
             // --- 顶部实时状态读数栏 ---
@@ -366,9 +368,9 @@ namespace Mori.ForestSlice
                 TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f),
                 Vector2.zero, new Vector2(-16f, 0f), outline: true);
 
-            // --- Section A: 人物星级经验 & 英雄成长 & 快捷调试 ---
+            // --- Section A: 人物星级经验 & 英雄独立经济 & 快捷调试 ---
             ForestUiWidgets.MakeText(
-                "SecATitle", body, "★ 领主经验 · 九宫 · 快捷调试", 17, ForestUiWidgets.InkDark,
+                "SecATitle", body, "★ 领主 · 英雄独立养成 · 快捷调试", 17, ForestUiWidgets.InkDark,
                 TextAnchor.MiddleLeft, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f),
                 new Vector2(16f, -60f), new Vector2(300f, 30f), outline: false);
 
@@ -385,7 +387,7 @@ namespace Mori.ForestSlice
             Image secABox = ForestUiWidgets.MakeSlicedImage(
                 "SecABox", body, ForestComicUiSkin.SubSlot, Color.white,
                 new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
-                new Vector2(0f, -94f), new Vector2(616f, 260f), false);
+                new Vector2(0f, -94f), new Vector2(616f, 360f), false);
             Transform secA = secABox.transform;
 
             // Row 1 (3 列: 193 x 44, 间距 8.5)
@@ -401,35 +403,46 @@ namespace Mori.ForestSlice
             // Row 3 (4 列: 143 x 44, 间距 8)
             MakeRow4Button(secA, 0, -108f, ForestComicUiSkin.BtnBlue, "全队英雄 +1级", 14, () => AddAllHeroLevels(1));
             MakeRow4Button(secA, 1, -108f, ForestComicUiSkin.BtnBlue, "全队英雄 +5级", 14, () => AddAllHeroLevels(5));
-            MakeRow4Button(secA, 2, -108f, ForestComicUiSkin.BtnOrange, "英雄勋章 +10", 14, () => GrantMaterial(SurvRes.HeroMedal, 10));
-            MakeRow4Button(secA, 3, -108f, ForestComicUiSkin.BtnGreen, "解锁全英雄", 14, UnlockAllHeroes);
+            MakeRow4Button(secA, 2, -108f, ForestComicUiSkin.BtnOrange, "英雄经验+2万", 14, GrantHeroExp20k);
+            MakeRow4Button(secA, 3, -108f, ForestComicUiSkin.BtnGreen, "解锁全9英雄", 14, UnlockAllHeroes);
 
-            // Row 4 (铜币 +500 / 铜币 +5000 / 秒完建造生产农牧 / 全资源补满+20)
-            MakeCustomButton(secA, "BtnCoin500", ForestComicUiSkin.BtnOrange, "铜币 +500", 14,
-                10f, -158f, 116f, 44f, () => AddCoins(500));
-            MakeCustomButton(secA, "BtnCoin5000", ForestComicUiSkin.BtnOrange, "铜币 +5000", 14,
-                134f, -158f, 124f, 44f, () => AddCoins(5000));
-            MakeCustomButton(secA, "BtnInstantAll", ForestComicUiSkin.BtnGreen, "一键秒完建造/生产/农牧", 13,
-                266f, -158f, 186f, 44f, InstantCompleteAll);
-            MakeCustomButton(secA, "BtnFillAll20", ForestComicUiSkin.BtnBlue, "全资源补满+20", 14,
-                460f, -158f, 146f, 44f, FillAllResources20);
+            // Row 4 (独立英雄养成专项发放 Row A: 招募卡+20 / 全英雄碎片+30 / 万能碎片+20)
+            MakeRow3Button(secA, 0, -158f, ForestComicUiSkin.BtnOrange, "招募卡+20", 14, () => GrantMaterial(SurvRes.RecruitTicket, 20));
+            MakeRow3Button(secA, 1, -158f, ForestComicUiSkin.BtnGreen, "全英雄碎片+30", 14, GrantAllHeroShards30);
+            MakeRow3Button(secA, 2, -158f, ForestComicUiSkin.BtnOrange, "万能碎片+20", 14, GrantUniversalShards20);
 
-            // Row 5 (4 列: 九宫格阵型与 40 关闯关快捷调试)
-            MakeRow4Button(secA, 0, -208f, ForestComicUiSkin.BtnGreen, "全英雄+全阵型", 13, UnlockAllHeroesAndFormations);
-            MakeRow4Button(secA, 1, -208f, ForestComicUiSkin.BtnBlue, "关卡:第1关", 13, () => SetBattleStage(1));
-            MakeRow4Button(secA, 2, -208f, ForestComicUiSkin.BtnOrange, "关卡:第5关Boss", 13, () => SetBattleStage(5));
-            MakeRow4Button(secA, 3, -208f, ForestComicUiSkin.BtnBlue, "关卡:第12关", 13, () => SetBattleStage(12));
+            // Row 5 (独立英雄养成专项发放 Row B: 技能书+50 / 全徽章+自选箱 / 秒完建造生产农牧 / 全资源补满+20)
+            MakeCustomButton(secA, "BtnSkillBook50", ForestComicUiSkin.BtnBlue, "技能书+50", 14,
+                10f, -208f, 126f, 44f, () => GrantMaterial(SurvRes.SkillBook, 50));
+            MakeCustomButton(secA, "BtnAllBadgesBox", ForestComicUiSkin.BtnOrange, "全徽章+自选箱", 13,
+                144f, -208f, 140f, 44f, GrantAllBadgesAndChoiceBoxes);
+            MakeCustomButton(secA, "BtnInstantAll", ForestComicUiSkin.BtnGreen, "秒完建造/生产/农牧", 13,
+                292f, -208f, 168f, 44f, InstantCompleteAll);
+            MakeCustomButton(secA, "BtnFillAll20", ForestComicUiSkin.BtnBlue, "全资源补满+20", 13,
+                468f, -208f, 138f, 44f, FillAllResources20);
+
+            // Row 6 (铜币 + 九宫格阵型与 40 关闯关快捷调试)
+            MakeRow4Button(secA, 0, -258f, ForestComicUiSkin.BtnOrange, "铜币 +5000", 13, () => AddCoins(5000));
+            MakeRow4Button(secA, 1, -258f, ForestComicUiSkin.BtnGreen, "全9英雄+阵型", 13, UnlockAllHeroesAndFormations);
+            MakeRow4Button(secA, 2, -258f, ForestComicUiSkin.BtnBlue, "关卡:第8关", 13, () => SetBattleStage(8));
+            MakeRow4Button(secA, 3, -258f, ForestComicUiSkin.BtnBlue, "关卡:第15关", 13, () => SetBattleStage(15));
+
+            // Row 7 (关卡快捷切至第1关 / 第10关抗性阵 / 第20关 / 巡逻挂机+2小时)
+            MakeRow4Button(secA, 0, -308f, ForestComicUiSkin.BtnBlue, "关卡:第1关", 13, () => SetBattleStage(1));
+            MakeRow4Button(secA, 1, -308f, ForestComicUiSkin.BtnBlue, "关卡:第10关", 13, () => SetBattleStage(10));
+            MakeRow4Button(secA, 2, -308f, ForestComicUiSkin.BtnBlue, "关卡:第20关", 13, () => SetBattleStage(20));
+            MakeRow4Button(secA, 3, -308f, ForestComicUiSkin.BtnOrange, "巡逻挂机+2h", 13, AddPatrol2Hours);
 
             // --- Section B: 指定材料精准发放 ---
             ForestUiWidgets.MakeText(
                 "SecBTitle", body, "★ 指定材料精准发放 (点击即领)", 17, ForestUiWidgets.InkDark,
                 TextAnchor.MiddleLeft, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f),
-                new Vector2(16f, -364f), new Vector2(300f, 34f), outline: false);
+                new Vector2(16f, -464f), new Vector2(300f, 34f), outline: false);
 
             ForestUiWidgets.MakeText(
                 "AmtHint", body, "单次数量:", 15, ForestUiWidgets.InkMuted,
                 TextAnchor.MiddleRight, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(1f, 1f),
-                new Vector2(-266f, -364f), new Vector2(86f, 34f), outline: false);
+                new Vector2(-266f, -464f), new Vector2(86f, 34f), outline: false);
 
             for (int i = 0; i < 3; i++)
             {
@@ -438,7 +451,7 @@ namespace Mori.ForestSlice
                 float rightX = -182f + i * 85f;
                 Button b = ForestUiWidgets.MakeJellyButton(
                     "BtnAmt_" + amt, body, ForestComicUiSkin.BtnGrey, "+" + amt, 16,
-                    new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(rightX, -363f), new Vector2(78f, 36f),
+                    new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(rightX, -463f), new Vector2(78f, 36f),
                     () => SetAmountMultiplier(amt), out Text lbl);
                 _amtBtnImgs[idx] = b.GetComponent<Image>();
                 _amtBtnLbls[idx] = lbl;
@@ -451,7 +464,7 @@ namespace Mori.ForestSlice
                 float leftX = 12f + t * 156f;
                 Button tb = ForestUiWidgets.MakeJellyButton(
                     "BtnTab_" + t, body, ForestComicUiSkin.SubSlot, CategoryTitles[t], 15,
-                    new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(leftX, -408f), new Vector2(148f, 42f),
+                    new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(leftX, -508f), new Vector2(148f, 42f),
                     () => SelectCategoryTab(tabIdx), out Text tLbl);
                 _tabBtnImgs[t] = tb.GetComponent<Image>();
                 _tabBtnLbls[t] = tLbl;
@@ -464,7 +477,7 @@ namespace Mori.ForestSlice
                 int col = i % 3;
                 int row = i / 3;
                 float x = 12f + col * 208f;
-                float y = -460f - row * 95f;
+                float y = -560f - row * 95f;
 
                 Image cellBg = ForestUiWidgets.MakeSlicedImage(
                     "MatCell_" + i, body, ForestComicUiSkin.SubSlot, Color.white,
@@ -515,7 +528,7 @@ namespace Mori.ForestSlice
             Image footPill = ForestUiWidgets.MakeSlicedImage(
                 "FeedbackPill", body, ForestComicUiSkin.DarkPill, Color.white,
                 new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
-                new Vector2(0f, -842f), new Vector2(616f, 34f), false);
+                new Vector2(0f, -942f), new Vector2(616f, 34f), false);
             _feedbackTxt = ForestUiWidgets.MakeText(
                 "FeedbackTxt", footPill.transform,
                 "提示: 点击任意材料格立即入库，编辑器支持 F1 或 ~ 键快捷开关",
@@ -622,7 +635,7 @@ namespace Mori.ForestSlice
         {
             if (_sim == null) return;
             _sim.GmUnlockAllHeroes();
-            SetFeedback("已解锁全部 6 名骨干英雄并同步驻营小队");
+            SetFeedback($"已解锁全部 {_sim.Heroes.Count} 名骨干英雄并同步驻营小队");
             RefreshAll();
         }
 
@@ -630,7 +643,49 @@ namespace Mori.ForestSlice
         {
             if (_sim == null) return;
             _sim.GmUnlockAllHeroesAndFormations();
-            SetFeedback("已解锁全部 6 名骨干英雄、4 大战术阵型与 5 人满编推荐布阵!");
+            SetFeedback($"已解锁全{_sim.Heroes.Count}名英雄(3★觉醒)、6大阵型图谱、全徽章与2万英雄经验!");
+            RefreshAll();
+        }
+
+        public void GrantHeroExp20k()
+        {
+            if (_sim == null) return;
+            _sim.Add(SurvRes.HeroExp, 20000, notifyToast: true);
+            SetFeedback($"已发放【英雄经验】+20000 (当前拥有: {_sim.Get(SurvRes.HeroExp)})");
+            RefreshAll();
+        }
+
+        public void GrantAllHeroShards30()
+        {
+            if (_sim == null) return;
+            _sim.GmAddAllHeroShards(30);
+            SetFeedback($"全部 {_sim.Heroes.Count} 名英雄专属拼图碎片已各 +30!");
+            RefreshAll();
+        }
+
+        public void GrantUniversalShards20()
+        {
+            if (_sim == null) return;
+            _sim.Add(SurvRes.ShardUnivEpic, 20, notifyToast: true);
+            _sim.Add(SurvRes.ShardUnivLeg, 20, notifyToast: true);
+            SetFeedback($"已发放史诗万能碎片+20 ({_sim.Get(SurvRes.ShardUnivEpic)}) · 传说万能碎片+20 ({_sim.Get(SurvRes.ShardUnivLeg)})!");
+            RefreshAll();
+        }
+
+        public void GrantAllBadgesAndChoiceBoxes()
+        {
+            if (_sim == null) return;
+            _sim.GmGrantAllBadgesAndBoxes();
+            SetFeedback("已发放全 6 类战术徽章各+2 · 原料自选箱+5 · 加速沙漏+5!");
+            RefreshAll();
+        }
+
+        public void AddPatrol2Hours()
+        {
+            if (_sim == null) return;
+            _sim.PatrolAccumSec = Mathf.Min(43200f, _sim.PatrolAccumSec + 7200f);
+            _sim.GetPatrolPendingRewards(out int hExp, out int cns, out int bks, out int mins);
+            SetFeedback($"哨卡巡逻挂机已增加 2 小时 (当前累积 {mins} 分钟 · 英雄经验+{hExp} · 技能书+{bks})!");
             RefreshAll();
         }
 
@@ -663,9 +718,13 @@ namespace Mori.ForestSlice
         void FillAllResources20()
         {
             if (_sim == null) return;
+            int resCnt = 0;
             foreach (SurvRes r in Enum.GetValues(typeof(SurvRes)))
+            {
                 _sim.Add(r, 20, notifyToast: false);
-            SetFeedback($"全 35 种材料均已补充 +20 (基础仓上限: {_sim.StorageCap})");
+                resCnt++;
+            }
+            SetFeedback($"全 {resCnt} 种材料均已补充 +20 (基础仓上限: {_sim.StorageCap})");
             RefreshAll();
         }
 

@@ -49,15 +49,22 @@ namespace Mori.ForestSlice
             public float gnawCooldown;
             public float timer;
             public float phase;
+            public Vector2 anchorGrid;
+            public Vector2 patrolTangentWorld;
+            public float patrolOffset;
+            public float patrolTargetOffset;
+            public float grazePauseTimer;
+            public float baseScale = 0.90f;
             public Transform tr;
             public SpriteRenderer sr;
             public Transform shadowTr;
+            public ForestSpriteFlipbook flipbook;
         }
 
         public sealed class VillagerActor
         {
             public int index;
-            public int kindIdx; // 0..3 -> villager_0..3
+            public int kindIdx; // 1..3 -> villager_1..3
             public float gx, gy;
             public float targetGx, targetGy;
             public float pauseTimer;
@@ -65,9 +72,45 @@ namespace Mori.ForestSlice
             public float phase;
             public string chatterText;
             public float chatterTimer;
+            public float baseScale = 0.86f;
             public Transform tr;
             public SpriteRenderer sr;
             public Transform shadowTr;
+            public ForestSpriteFlipbook flipbook;
+        }
+
+        /// <summary>驻守在已建成建筑旁固定工位劳作的工匠 NPC（3 帧 PingPong 循环，零碰撞体积绝不挡路）。</summary>
+        public sealed class StationedWorkerActor
+        {
+            public CampNode node;
+            public string stripKey;
+            public Vector2 worldPos;
+            public float baseScale = 0.88f;
+            public bool onDockDeck;
+            public float phase;
+            public GameObject go;
+            public SpriteRenderer sr;
+            public GameObject shadowGo;
+            public SpriteRenderer shadowSr;
+            public ForestSpriteFlipbook flipbook;
+        }
+
+        /// <summary>山林畜牧栏建成后在围栏内外欢快蹦跳觅食的微缩圈养动物（零碰撞体积）。</summary>
+        public sealed class RanchPenAnimalActor
+        {
+            public CampNode ranchNode;
+            public string stripKey;
+            public Vector2 anchorWorld;
+            public Vector2 patrolAxis;
+            public float offset;
+            public float targetOffset;
+            public float pauseTimer;
+            public float baseScale;
+            public float phase;
+            public GameObject go;
+            public SpriteRenderer sr;
+            public GameObject shadowGo;
+            public ForestSpriteFlipbook flipbook;
         }
 
         public sealed class SquadCombatSlot
@@ -168,6 +211,8 @@ namespace Mori.ForestSlice
         public readonly List<ChopTask> ChopQueue = new List<ChopTask>();
         public readonly List<Walker> Walkers = new List<Walker>();
         public readonly List<VillagerActor> CivilianVillagers = new List<VillagerActor>();
+        public readonly Dictionary<string, StationedWorkerActor> StationedWorkers = new Dictionary<string, StationedWorkerActor>();
+        public readonly List<RanchPenAnimalActor> RanchPenAnimals = new List<RanchPenAnimalActor>(4);
         public readonly List<SquadCombatSlot> SquadSlots = new List<SquadCombatSlot>();
         public readonly List<CombatProjectile> Projectiles = new List<CombatProjectile>();
         public readonly List<FireHazardZone> FireZones = new List<FireHazardZone>();
@@ -293,37 +338,17 @@ namespace Mori.ForestSlice
             };
         }
 
-        static PuppetRigProfile _leimengRigProfile;
-
-        /// <summary>解析幸存者骨干伙伴专属模型档案（严禁同伴回退为领主主角阿澈的蓝帽衫模型！雷猛使用专属硬汉猎装形象）。</summary>
+        /// <summary>解析幸存者骨干伙伴专属 9 部件多骨骼模型档案（大锤、小棠、雷猛、林砚、铁叔、老陈头、青禾、阿飒、周博士全员使用真实骨骼，绝不回退为阿澈或单张流民静态图）。</summary>
         public static PuppetRigProfile ResolveCompanionRigProfile(string heroId, string characterId)
         {
-            if (heroId == "leimeng" || characterId == "hunter" || characterId == "leimeng")
-            {
-                if (_leimengRigProfile == null)
-                {
-                    _leimengRigProfile = new PuppetRigProfile
-                    {
-                        characterId = "hunter",
-                        displayName = "雷猛",
-                        singleBodySpriteKey = "villager_0",
-                        baseScale = 0.68f,
-                        showGroundRing = false,
-                        ringTint = new Color(1f, 0.58f, 0.24f, 0.85f),
-                        slashTint = new Color(1f, 0.78f, 0.34f, 1f),
-                        toolStyle = ToolAnimStyle.HatchetCleave,
-                        tiers = new[]
-                        {
-                            new OutfitTierDef { tier = OutfitTier.Refugee, requireShelterLv = 1, tierName = "荒野猎装", atlasKey = "dachui_puppet_atlas", bustKey = "bust_vil_0" },
-                            new OutfitTierDef { tier = OutfitTier.Reinforced, requireShelterLv = 2, tierName = "重装巡林服", atlasKey = "dachui_puppet_atlas", bustKey = "bust_vil_0" },
-                            new OutfitTierDef { tier = OutfitTier.Armored, requireShelterLv = 3, tierName = "狂风破障甲", atlasKey = "dachui_puppet_atlas", bustKey = "bust_vil_0" },
-                        }
-                    };
-                }
-                return _leimengRigProfile;
-            }
-
             string key = !string.IsNullOrEmpty(characterId) ? characterId : heroId;
+            if (heroId == "leimeng" || key == "hunter" || key == "leimeng")
+                key = "leimeng";
+            else if (heroId == "tieshu" || key == "tieshu")
+                key = "tieshu";
+            else if (heroId == "asa" || heroId == "qinghe" || heroId == "zhoudr")
+                key = heroId;
+
             if (string.IsNullOrEmpty(key) || key == "ache")
                 return PuppetRegistry.GetProfile("dachui");
 
@@ -629,6 +654,8 @@ namespace Mori.ForestSlice
             {
                 nv.go.SetActive(false);
                 if (nv.shadowGo != null) nv.shadowGo.SetActive(false);
+                SyncStationedArtisanWorker(n);
+                if (n.kind == NodeKind.Ranch) SyncRanchPenAnimals(n);
                 return;
             }
 
@@ -647,6 +674,8 @@ namespace Mori.ForestSlice
             {
                 nv.go.SetActive(false);
                 if (nv.shadowGo != null) nv.shadowGo.SetActive(false);
+                SyncStationedArtisanWorker(n);
+                if (n.kind == NodeKind.Ranch) SyncRanchPenAnimals(n);
                 return;
             }
 
@@ -708,11 +737,339 @@ namespace Mori.ForestSlice
                 nv.extras.Add(glow);
             }
 
+            SyncStationedArtisanWorker(n);
+            if (n.kind == NodeKind.Ranch)
+                SyncRanchPenAnimals(n);
+
             SyncSurvivorWalkers();
             if (Walkers.Count > 0 && Walkers[0].puppet != null)
                 Walkers[0].puppet.SetSkinTier(Sim.MaxUnlockedSkinTier, autoFallbackToBase: true);
             RefreshWalkerDelegationStations();
             SyncCivilianVillagers();
+        }
+
+        // ---------------- 建筑旁驻点劳作工匠 NPC 与畜牧栏微缩圈养动物（零碰撞体积！） ----------------
+        static bool TryResolveStationedWorkerConfig(CampNode n, out string stripKey, out Vector2 worldPos, out bool flipX, out bool onDockDeck)
+        {
+            stripKey = null;
+            worldPos = Vector2.zero;
+            flipX = false;
+            onDockDeck = false;
+            if (n == null) return false;
+
+            switch (n.kind)
+            {
+                case NodeKind.RiverDock:
+                    stripKey = "anim_work_fishing";
+                    // 站在木栈钓台前缘甲板上向溪流甩竿垂钓
+                    worldPos = (Vector2)ForestSliceView.Iso(n.gx, n.gy) + new Vector2(0.06f, -0.06f);
+                    flipX = false;
+                    onDockDeck = true;
+                    return true;
+
+                case NodeKind.Kitchen:
+                    stripKey = "anim_work_cooking";
+                    worldPos = ForestSliceView.Iso(n.gx + 0.85f, n.gy - 0.55f);
+                    flipX = true;
+                    return true;
+
+                case NodeKind.Farm:
+                    stripKey = "anim_work_farming";
+                    worldPos = ForestSliceView.Iso(n.gx + 1.05f, n.gy - 0.85f);
+                    flipX = true;
+                    return true;
+
+                case NodeKind.Sawmill:
+                    stripKey = "anim_work_sawing";
+                    worldPos = ForestSliceView.Iso(n.gx - 0.85f, n.gy - 0.75f);
+                    flipX = false;
+                    return true;
+
+                case NodeKind.Smithy:
+                    stripKey = "anim_work_forging";
+                    worldPos = ForestSliceView.Iso(n.gx - 0.80f, n.gy - 0.65f);
+                    flipX = false;
+                    return true;
+
+                case NodeKind.Tailor:
+                    stripKey = "anim_work_herbs";
+                    worldPos = ForestSliceView.Iso(n.gx - 0.60f, n.gy - 0.85f);
+                    flipX = false;
+                    return true;
+
+                case NodeKind.HerbHut:
+                    stripKey = "anim_work_herbs";
+                    worldPos = ForestSliceView.Iso(n.gx - 0.60f, n.gy - 0.85f);
+                    flipX = false;
+                    return true;
+
+                case NodeKind.RelicWell:
+                    stripKey = "anim_work_herbs";
+                    worldPos = ForestSliceView.Iso(n.gx + 0.65f, n.gy - 0.65f);
+                    flipX = true;
+                    return true;
+
+                default:
+                    return false;
+            }
+        }
+
+        void SyncStationedArtisanWorker(CampNode n)
+        {
+            if (n == null || string.IsNullOrEmpty(n.id)) return;
+
+            if (!TryResolveStationedWorkerConfig(n, out string stripKey, out Vector2 workWorldPos, out bool flipX, out bool onDockDeck))
+                return;
+
+            bool shouldExistAndShow = n.state == NodeState.Active && n.level >= 1;
+            if (!StationedWorkers.TryGetValue(n.id, out StationedWorkerActor sw))
+            {
+                if (!shouldExistAndShow) return;
+
+                int fallbackKind = 1 + (Mathf.Abs(n.id.GetHashCode()) % 3);
+                Sprite fallbackSp = ForestArt.Get("villager_" + fallbackKind, () => ForestPlaceholderArt.Survivor(fallbackKind + 1));
+                float phaseOff = (Mathf.Abs(n.id.GetHashCode()) % 17) * 0.23f;
+
+                var fb = new ForestSpriteFlipbook(
+                    stripKey,
+                    frameCount: 3,
+                    mode: FlipbookPlayMode.PingPongAll,
+                    fps: 5.2f,
+                    fallbackSprite: fallbackSp,
+                    ppu: 256f,
+                    pivotY: 0.08f,
+                    phaseOffset: phaseOff);
+
+                var go = new GameObject("StationedArtisan_" + n.id);
+                go.transform.SetParent(_actorRoot, false);
+                var sr = go.AddComponent<SpriteRenderer>();
+                sr.flipX = flipX;
+                fb.ApplyTo(sr, 0f, moving: true);
+
+                Vector2 wg = ForestSliceView.WorldToGrid(workWorldPos);
+                GameObject shGo = View.CreateShadow(wg.x, wg.y, 0.48f, 0.44f);
+                SpriteRenderer shSr = shGo != null ? shGo.GetComponent<SpriteRenderer>() : null;
+                if (onDockDeck && shGo != null)
+                    shGo.transform.SetParent(_actorRoot, false);
+
+                sw = new StationedWorkerActor
+                {
+                    node = n,
+                    stripKey = stripKey,
+                    worldPos = workWorldPos,
+                    baseScale = onDockDeck ? 0.72f : 0.88f,
+                    onDockDeck = onDockDeck,
+                    phase = phaseOff,
+                    go = go,
+                    sr = sr,
+                    shadowGo = shGo,
+                    shadowSr = shSr,
+                    flipbook = fb,
+                };
+                StationedWorkers[n.id] = sw;
+            }
+
+            sw.node = n;
+            sw.worldPos = workWorldPos;
+            sw.onDockDeck = onDockDeck;
+
+            bool visibleNow = shouldExistAndShow && !InWaveDefense && !(_fishingActive && n.kind == NodeKind.RiverDock);
+            if (sw.go != null) sw.go.SetActive(visibleNow);
+            if (sw.shadowGo != null) sw.shadowGo.SetActive(visibleNow);
+
+            if (visibleNow && sw.go != null)
+            {
+                sw.sr.flipX = flipX;
+                SyncStationedWorkerSortingAndTransform(sw, 1f, 1f);
+            }
+        }
+
+        void SyncStationedWorkerSortingAndTransform(StationedWorkerActor sw, float scaleXMul, float scaleYMul)
+        {
+            Vector3 p = new Vector3(sw.worldPos.x, sw.worldPos.y, 0f);
+            sw.go.transform.localPosition = p;
+            sw.go.transform.localScale = new Vector3(sw.baseScale * scaleXMul, sw.baseScale * scaleYMul, 1f);
+
+            if (sw.onDockDeck && sw.node != null && Visuals.TryGetValue(sw.node.id, out NodeVisual dockVis) && dockVis.sr != null)
+            {
+                int dockOrder = dockVis.sr.sortingOrder;
+                sw.sr.sortingOrder = dockOrder + 6;
+                if (sw.shadowGo != null)
+                {
+                    sw.shadowGo.transform.localPosition = p;
+                    if (sw.shadowSr != null) sw.shadowSr.sortingOrder = dockOrder + 3;
+                }
+            }
+            else
+            {
+                sw.sr.sortingOrder = Mathf.RoundToInt(-p.y * 100f) + 2;
+                if (sw.shadowGo != null)
+                    sw.shadowGo.transform.localPosition = p;
+            }
+        }
+
+        void TickStationedWorkers(float dt)
+        {
+            foreach (var kv in StationedWorkers)
+            {
+                StationedWorkerActor sw = kv.Value;
+                if (sw == null || sw.go == null || sw.node == null) continue;
+
+                bool visibleNow = sw.node.state == NodeState.Active &&
+                                  sw.node.level >= 1 &&
+                                  !InWaveDefense &&
+                                  !(_fishingActive && sw.node.kind == NodeKind.RiverDock);
+
+                if (sw.go.activeSelf != visibleNow)
+                    sw.go.SetActive(visibleNow);
+                if (sw.shadowGo != null && sw.shadowGo.activeSelf != visibleNow)
+                    sw.shadowGo.SetActive(visibleNow);
+                if (!visibleNow) continue;
+
+                sw.phase += dt;
+                sw.flipbook?.ApplyTo(sw.sr, dt, moving: true);
+
+                float pulse = Mathf.Sin(sw.phase * 5.2f);
+                float bounceY = 1.0f + 0.02f * pulse;
+                float squashX = 1.0f - 0.012f * pulse;
+                SyncStationedWorkerSortingAndTransform(sw, squashX, bounceY);
+            }
+        }
+
+        void SyncRanchPenAnimals(CampNode ranchNode)
+        {
+            if (ranchNode == null || ranchNode.kind != NodeKind.Ranch) return;
+            bool active = ranchNode.state == NodeState.Active && ranchNode.level >= 1;
+
+            if (active && RanchPenAnimals.Count == 0)
+            {
+                Vector2 ranchIso = ForestSliceView.Iso(ranchNode.gx, ranchNode.gy);
+                string[] keys = { "anim_rabbit", "anim_boar", "anim_deer" };
+                string[] fallbacks = { "boar", "boar", "deer" };
+                float[] scales = { 0.44f, 0.47f, 0.51f };
+                float[] fpsArr = { 6.2f, 5.4f, 5.2f };
+                Vector2[] localSpots =
+                {
+                    new Vector2(-0.44f, -0.14f),
+                    new Vector2(0.06f, -0.24f),
+                    new Vector2(0.54f, -0.12f),
+                };
+                Vector2[] axes =
+                {
+                    new Vector2(0.92f, -0.39f).normalized,
+                    new Vector2(1f, 0f),
+                    new Vector2(0.92f, 0.39f).normalized,
+                };
+
+                for (int i = 0; i < 3; i++)
+                {
+                    string fbKey = fallbacks[i];
+                    Sprite fbSp = ForestArt.Get(fbKey, () => ForestPlaceholderArt.Survivor(9));
+                    var flip = new ForestSpriteFlipbook(
+                        keys[i],
+                        frameCount: 3,
+                        mode: FlipbookPlayMode.PingPongAll,
+                        fps: fpsArr[i],
+                        fallbackSprite: fbSp,
+                        ppu: 256f,
+                        pivotY: 0.08f,
+                        phaseOffset: i * 1.15f);
+
+                    Vector2 spotW = ranchIso + localSpots[i];
+                    Vector2 spotG = ForestSliceView.WorldToGrid(spotW);
+                    var go = new GameObject("RanchPen_" + keys[i] + "_" + i);
+                    go.transform.SetParent(_actorRoot, false);
+                    go.transform.localPosition = new Vector3(spotW.x, spotW.y, 0f);
+                    go.transform.localScale = new Vector3(scales[i], scales[i], 1f);
+                    var sr = go.AddComponent<SpriteRenderer>();
+                    sr.flipX = i % 2 == 1;
+                    flip.ApplyTo(sr, 0f, moving: true);
+                    sr.sortingOrder = Mathf.RoundToInt(-spotW.y * 100f) + 3;
+
+                    GameObject sh = View.CreateShadow(spotG.x, spotG.y, scales[i] * 0.68f, scales[i] * 0.58f);
+
+                    RanchPenAnimals.Add(new RanchPenAnimalActor
+                    {
+                        ranchNode = ranchNode,
+                        stripKey = keys[i],
+                        anchorWorld = spotW,
+                        patrolAxis = axes[i],
+                        offset = 0f,
+                        targetOffset = i % 2 == 0 ? 0.16f : -0.16f,
+                        pauseTimer = 0.6f + i * 0.8f,
+                        baseScale = scales[i],
+                        phase = i * 1.9f,
+                        go = go,
+                        sr = sr,
+                        shadowGo = sh,
+                        flipbook = flip,
+                    });
+                }
+            }
+
+            Vector2 curRanchIso = ForestSliceView.Iso(ranchNode.gx, ranchNode.gy);
+            Vector2[] spotsUpdate =
+            {
+                new Vector2(-0.44f, -0.14f),
+                new Vector2(0.06f, -0.24f),
+                new Vector2(0.54f, -0.12f),
+            };
+            bool show = active && !InWaveDefense;
+            for (int i = 0; i < RanchPenAnimals.Count; i++)
+            {
+                RanchPenAnimalActor pa = RanchPenAnimals[i];
+                pa.ranchNode = ranchNode;
+                if (i < spotsUpdate.Length)
+                    pa.anchorWorld = curRanchIso + spotsUpdate[i];
+                if (pa.go != null) pa.go.SetActive(show);
+                if (pa.shadowGo != null) pa.shadowGo.SetActive(show);
+            }
+        }
+
+        void TickRanchPenAnimals(float dt)
+        {
+            for (int i = 0; i < RanchPenAnimals.Count; i++)
+            {
+                RanchPenAnimalActor pa = RanchPenAnimals[i];
+                if (pa == null || pa.go == null || pa.ranchNode == null) continue;
+                bool show = pa.ranchNode.state == NodeState.Active && pa.ranchNode.level >= 1 && !InWaveDefense;
+                if (pa.go.activeSelf != show) pa.go.SetActive(show);
+                if (pa.shadowGo != null && pa.shadowGo.activeSelf != show) pa.shadowGo.SetActive(show);
+                if (!show) continue;
+
+                pa.phase += dt;
+                bool movingNow = false;
+                if (pa.pauseTimer > 0f)
+                {
+                    pa.pauseTimer -= dt;
+                    pa.flipbook?.ApplyTo(pa.sr, dt, moving: true, speedMul: 0.52f);
+                    float br = Mathf.Sin(pa.phase * 3.4f) * 0.02f;
+                    pa.go.transform.localScale = new Vector3(pa.baseScale * (1f - br * 0.5f), pa.baseScale * (1f + br), 1f);
+                    if (pa.pauseTimer <= 0f)
+                        pa.targetOffset = pa.offset >= 0f ? -0.16f : 0.16f;
+                }
+                else
+                {
+                    float prev = pa.offset;
+                    pa.offset = Mathf.MoveTowards(pa.offset, pa.targetOffset, 0.22f * dt);
+                    float dx = pa.patrolAxis.x * (pa.targetOffset - prev);
+                    if (Mathf.Abs(dx) > 0.0001f)
+                        pa.sr.flipX = dx > 0f;
+                    movingNow = Mathf.Abs(pa.offset - prev) > 0.00005f;
+                    if (Mathf.Abs(pa.offset - pa.targetOffset) < 0.008f)
+                        pa.pauseTimer = 1.4f + (float)_rng.NextDouble() * 1.6f;
+
+                    pa.flipbook?.ApplyTo(pa.sr, dt, moving: true, speedMul: 1.10f);
+                    pa.go.transform.localScale = new Vector3(pa.baseScale, pa.baseScale, 1f);
+                }
+
+                Vector2 curW = pa.anchorWorld + pa.patrolAxis * pa.offset;
+                float hop = movingNow ? Mathf.Abs(Mathf.Sin(pa.phase * 8.5f)) * 0.022f : 0f;
+                pa.go.transform.localPosition = new Vector3(curW.x, curW.y + hop, 0f);
+                pa.sr.sortingOrder = Mathf.RoundToInt(-curW.y * 100f) + 3;
+                if (pa.shadowGo != null)
+                    pa.shadowGo.transform.localPosition = new Vector3(curW.x, curW.y, 0f);
+            }
         }
 
         void AddExtraProp(NodeVisual nv, string key, float gx, float gy, bool flip)
@@ -1011,17 +1368,29 @@ namespace Mori.ForestSlice
             while (CivilianVillagers.Count < target)
             {
                 int idx = CivilianVillagers.Count;
-                // villager_0 专属于重装先锋骨干【雷猛】，普通流民使用 villager_1..3 保持 100% 形象区分！
                 int kind = 1 + (idx % 3);
+                int walkerStripIdx = idx % 3;
                 Vector2 wp = VillagerWaypoints[idx % VillagerWaypoints.Length];
                 Vector2 nextWp = VillagerWaypoints[(idx + 3) % VillagerWaypoints.Length];
 
+                Sprite fallbackSp = ForestArt.Get("villager_" + kind, () => ForestPlaceholderArt.Survivor(kind + 1));
+                var flip = new ForestSpriteFlipbook(
+                    "anim_walker_" + walkerStripIdx,
+                    frameCount: 4,
+                    mode: FlipbookPlayMode.LoopAll,
+                    fps: 7.5f,
+                    fallbackSprite: fallbackSp,
+                    ppu: 256f,
+                    pivotY: 0.08f,
+                    phaseOffset: idx * 0.31f);
+
+                const float roadWalkerScale = 0.86f;
                 var go = new GameObject($"CivilianVillager_{idx}_k{kind}");
                 go.transform.SetParent(_actorRoot, false);
-                go.transform.localScale = new Vector3(0.68f, 0.68f, 1f);
+                go.transform.localScale = new Vector3(roadWalkerScale, roadWalkerScale, 1f);
                 var sr = go.AddComponent<SpriteRenderer>();
-                sr.sprite = ForestArt.Get("villager_" + kind, () => ForestPlaceholderArt.Survivor(kind + 1));
-                GameObject sh = View.CreateShadow(wp.x, wp.y, 0.48f, 0.46f);
+                flip.ApplyTo(sr, 0f, moving: false);
+                GameObject sh = View.CreateShadow(wp.x, wp.y, 0.50f, 0.46f);
 
                 var v = new VillagerActor
                 {
@@ -1033,9 +1402,11 @@ namespace Mori.ForestSlice
                     targetGy = nextWp.y,
                     pauseTimer = 1.2f + (idx % 4) * 1.1f,
                     phase = idx * 1.7f,
+                    baseScale = roadWalkerScale,
                     tr = go.transform,
                     sr = sr,
                     shadowTr = sh != null ? sh.transform : null,
+                    flipbook = flip,
                 };
                 SyncActorTransform(v.tr, v.sr, v.shadowTr, v.gx, v.gy, 0f, 0f);
                 CivilianVillagers.Add(v);
@@ -1789,23 +2160,63 @@ namespace Mori.ForestSlice
             if (!TryPickClearedEdgeCell(out float gx, out float gy)) return;
             bool isDeer = _rng.NextDouble() < 0.55;
             Sprite sp = ForestArt.Get(isDeer ? "deer" : "boar", () => ForestPlaceholderArt.Survivor(9));
+            float phaseOff = (float)_rng.NextDouble() * 6f;
+            var flip = new ForestSpriteFlipbook(
+                isDeer ? "anim_deer" : "anim_boar",
+                frameCount: 3,
+                mode: FlipbookPlayMode.PingPongAll,
+                fps: 5.5f,
+                fallbackSprite: sp,
+                ppu: 256f,
+                pivotY: 0.08f,
+                phaseOffset: phaseOff);
+
+            float sc = isDeer ? 0.92f : 0.88f;
             var go = new GameObject(isDeer ? "WildDeer" : "WildBoar");
             go.transform.SetParent(_actorRoot, false);
+            go.transform.localScale = new Vector3(sc, sc, 1f);
             var sr = go.AddComponent<SpriteRenderer>();
-            sr.sprite = sp;
+            flip.ApplyTo(sr, 0f, moving: true);
             GameObject sh = View.CreateShadow(gx, gy, 0.58f, 0.55f);
+
+            // 选取林缘安全往返切线（±0.45 世界单位漫步啃草）
+            Vector2 baseW = ForestSliceView.Iso(gx, gy);
+            Vector2[] candDirs =
+            {
+                new Vector2(0.894f, 0.447f),
+                new Vector2(0.894f, -0.447f),
+                new Vector2(1f, 0f),
+            };
+            Vector2 chosenTangent = candDirs[0];
+            for (int d = 0; d < candDirs.Length; d++)
+            {
+                Vector2 td = candDirs[d];
+                if (IsInsideClearedBoundary(baseW + td * 0.45f, 0.12f) &&
+                    IsInsideClearedBoundary(baseW - td * 0.45f, 0.12f))
+                {
+                    chosenTangent = td;
+                    break;
+                }
+            }
 
             var a = new WildActor
             {
                 isZombie = false,
                 label = isDeer ? "林间野鹿" : "山林野猪",
                 gx = gx, gy = gy,
-                targetGx = gx + ((float)_rng.NextDouble() - 0.5f) * 1.4f,
-                targetGy = gy + ((float)_rng.NextDouble() - 0.5f) * 1.4f,
-                timer = 24f,
-                phase = (float)_rng.NextDouble() * 6f,
+                anchorGrid = new Vector2(gx, gy),
+                patrolTangentWorld = chosenTangent,
+                patrolOffset = 0f,
+                patrolTargetOffset = _rng.NextDouble() < 0.5 ? 0.45f : -0.45f,
+                grazePauseTimer = 0.9f + (float)_rng.NextDouble() * 1.2f,
+                baseScale = sc,
+                targetGx = gx,
+                targetGy = gy,
+                timer = 28f,
+                phase = phaseOff,
                 tr = go.transform, sr = sr,
                 shadowTr = sh != null ? sh.transform : null,
+                flipbook = flip,
             };
             SyncActorTransform(a.tr, a.sr, a.shadowTr, a.gx, a.gy, 0f, 0f);
             WildActors.Add(a);
@@ -1816,10 +2227,23 @@ namespace Mori.ForestSlice
             if (!TryPickClearedEdgeCell(out float gx, out float gy)) return;
             bool kindB = _rng.NextDouble() < 0.5;
             Sprite sp = ForestArt.Get(kindB ? "zombie_1" : "zombie_0", () => ForestPlaceholderArt.Survivor(8));
+            float phaseOff = (float)_rng.NextDouble() * 6f;
+            var flip = new ForestSpriteFlipbook(
+                kindB ? "anim_zom_armored" : "anim_zom_shambler",
+                frameCount: 4,
+                mode: FlipbookPlayMode.SplitMoveAttack,
+                fps: kindB ? 6.0f : 6.5f,
+                fallbackSprite: sp,
+                ppu: 256f,
+                pivotY: 0.08f,
+                phaseOffset: phaseOff);
+
+            const float zScale = 0.92f;
             var go = new GameObject("WanderingZombie");
             go.transform.SetParent(_actorRoot, false);
+            go.transform.localScale = new Vector3(zScale, zScale, 1f);
             var sr = go.AddComponent<SpriteRenderer>();
-            sr.sprite = sp;
+            flip.ApplyTo(sr, 0f, moving: true, attacking: false);
             GameObject sh = View.CreateShadow(gx, gy, 0.52f, 0.50f);
 
             CampNode fire = Sim.Find("kitchen");
@@ -1829,12 +2253,14 @@ namespace Mori.ForestSlice
                 isHordeRaid = hordeMember,
                 label = hordeMember ? "尸潮前锋" : "游荡丧尸",
                 gx = gx, gy = gy,
+                baseScale = zScale,
                 targetGx = fire != null ? fire.gx : 14.8f,
                 targetGy = fire != null ? fire.gy : 14.8f,
                 timer = 35f,
-                phase = (float)_rng.NextDouble() * 6f,
+                phase = phaseOff,
                 tr = go.transform, sr = sr,
                 shadowTr = sh != null ? sh.transform : null,
+                flipbook = flip,
             };
             SyncActorTransform(a.tr, a.sr, a.shadowTr, a.gx, a.gy, 0f, 0f);
             WildActors.Add(a);
@@ -2540,54 +2966,96 @@ namespace Mori.ForestSlice
                 a.timer -= dt;
                 if (a.timer <= 0f) { RemoveWildActor(a); continue; }
 
-                float dx = a.targetGx - a.gx, dy = a.targetGy - a.gy;
-                float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                float speed = a.isZombie ? (a.isHordeRaid ? 0.68f : 0.42f) : 0.55f;
-                if (dist > 0.1f)
+                bool actorMoving = false;
+                if (!a.isZombie)
                 {
-                    float step = Mathf.Min(dist, dt * speed);
-                    a.gx += dx / dist * step;
-                    a.gy += dy / dist * step;
-                    Vector3 sd = ForestSliceView.Iso(a.targetGx, a.targetGy) - ForestSliceView.Iso(a.gx, a.gy);
-                    if (Mathf.Abs(sd.x) > 0.01f) a.sr.flipX = sd.x > 0f;
-                }
-                else if (!a.isZombie)
-                {
-                    float nx = a.gx + ((float)_rng.NextDouble() - 0.5f) * 2.0f;
-                    float ny = a.gy + ((float)_rng.NextDouble() - 0.5f) * 2.0f;
-                    if (IsWalkableWorldPoint(ForestSliceView.Iso(nx, ny), 0.25f, 0.20f) &&
-                        !(nx > 13.0f && nx < 20.2f && ny > 12.8f && ny < 19.6f))
+                    // 林缘野生鹿/猪：围绕林缘锚点 ±0.45 世界单位轻盈往返漫步 + 停步低头啃草！
+                    Vector2 baseW = ForestSliceView.Iso(a.anchorGrid.x, a.anchorGrid.y);
+                    if (a.grazePauseTimer > 0f)
                     {
-                        a.targetGx = nx;
-                        a.targetGy = ny;
+                        a.grazePauseTimer -= dt;
+                        a.flipbook?.ApplyTo(a.sr, dt, moving: true, speedMul: 0.48f);
+                        float br = Mathf.Sin(a.phase * 3.2f) * 0.015f;
+                        a.tr.localScale = new Vector3(a.baseScale * (1f - br * 0.5f), a.baseScale * (1f + br), 1f);
+                        if (a.grazePauseTimer <= 0f)
+                            a.patrolTargetOffset = a.patrolOffset >= 0f ? -0.45f : 0.45f;
                     }
+                    else
+                    {
+                        float prevOff = a.patrolOffset;
+                        a.patrolOffset = Mathf.MoveTowards(a.patrolOffset, a.patrolTargetOffset, 0.36f * dt);
+                        Vector2 candW = baseW + a.patrolTangentWorld * a.patrolOffset;
+                        if (!IsInsideClearedBoundary(candW, 0.12f))
+                        {
+                            a.patrolOffset = prevOff;
+                            a.grazePauseTimer = 1.8f + (float)_rng.NextDouble() * 1.5f;
+                        }
+                        else
+                        {
+                            float deltaX = a.patrolTangentWorld.x * (a.patrolTargetOffset - prevOff);
+                            if (Mathf.Abs(deltaX) > 0.0001f)
+                                a.sr.flipX = deltaX > 0f;
+                            actorMoving = Mathf.Abs(a.patrolOffset - prevOff) > 0.00005f;
+                            if (Mathf.Abs(a.patrolOffset - a.patrolTargetOffset) < 0.01f)
+                                a.grazePauseTimer = 1.8f + (float)_rng.NextDouble() * 1.8f;
+                        }
+                        a.flipbook?.ApplyTo(a.sr, dt, moving: true, speedMul: actorMoving ? 1.10f : 0.48f);
+                        a.tr.localScale = new Vector3(a.baseScale, a.baseScale, 1f);
+                    }
+
+                    Vector2 curGrid = ForestSliceView.WorldToGrid(baseW + a.patrolTangentWorld * a.patrolOffset);
+                    a.gx = curGrid.x;
+                    a.gy = curGrid.y;
+
+                    if (Sim.HasWatchtower && a.timer < 20f)
+                    {
+                        ResolveWildActor(a, autoByTower: true);
+                        continue;
+                    }
+
+                    float hop = actorMoving ? Mathf.Abs(Mathf.Sin(a.phase * 7.8f)) * 0.025f : 0f;
+                    SyncActorTransform(a.tr, a.sr, a.shadowTr, a.gx, a.gy, hop, 0f);
                 }
                 else
                 {
-                    if (a.isHordeRaid) { ResolveWildActor(a, autoByTower: true); continue; }
-                    int steal = Mathf.Min(1, Sim.Get(SurvRes.Ration));
-                    if (steal > 0) Sim.Add(SurvRes.Ration, -steal);
-                    OnCustomToast?.Invoke("游荡丧尸偷走口粮！快点击驱赶或建拒马", new Vector2(a.gx, a.gy));
-                    RemoveWildActor(a);
-                    continue;
-                }
+                    float dx = a.targetGx - a.gx, dy = a.targetGy - a.gy;
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                    float speed = a.isHordeRaid ? 0.68f : 0.42f;
+                    if (dist > 0.1f)
+                    {
+                        float step = Mathf.Min(dist, dt * speed);
+                        a.gx += dx / dist * step;
+                        a.gy += dy / dist * step;
+                        actorMoving = step > 0.0001f;
+                        Vector3 sd = ForestSliceView.Iso(a.targetGx, a.targetGy) - ForestSliceView.Iso(a.gx, a.gy);
+                        if (Mathf.Abs(sd.x) > 0.01f) a.sr.flipX = sd.x > 0f;
+                    }
+                    else
+                    {
+                        if (a.isHordeRaid) { ResolveWildActor(a, autoByTower: true); continue; }
+                        int steal = Mathf.Min(1, Sim.Get(SurvRes.Ration));
+                        if (steal > 0) Sim.Add(SurvRes.Ration, -steal);
+                        OnCustomToast?.Invoke("游荡丧尸偷走口粮！快点击驱赶或建拒马", new Vector2(a.gx, a.gy));
+                        RemoveWildActor(a);
+                        continue;
+                    }
 
-                if (!a.isZombie && Sim.HasWatchtower && a.timer < 20f)
-                {
-                    ResolveWildActor(a, autoByTower: true);
-                    continue;
-                }
-                if (a.isZombie && (Sim.HasWatchtower || Sim.HasBarricade) && dist < 2.8f)
-                {
-                    ResolveWildActor(a, autoByTower: true);
-                    continue;
-                }
+                    if ((Sim.HasWatchtower || Sim.HasBarricade) && dist < 2.8f)
+                    {
+                        ResolveWildActor(a, autoByTower: true);
+                        continue;
+                    }
 
-                float hop = Mathf.Abs(Mathf.Sin(a.phase * (a.isZombie ? 5.5f : 7.5f))) * 0.035f;
-                float tilt = Mathf.Sin(a.phase * 5.5f) * (a.isZombie ? 6f : 2.5f);
-                SyncActorTransform(a.tr, a.sr, a.shadowTr, a.gx, a.gy, hop, tilt);
+                    a.flipbook?.ApplyTo(a.sr, dt, moving: actorMoving, attacking: false);
+                    bool hasFlipFrames = a.flipbook != null && a.flipbook.IsLoaded;
+                    float hop = Mathf.Abs(Mathf.Sin(a.phase * 5.5f)) * (hasFlipFrames ? 0.014f : 0.035f);
+                    float tilt = Mathf.Sin(a.phase * 5.5f) * (hasFlipFrames ? 2.0f : 6f);
+                    SyncActorTransform(a.tr, a.sr, a.shadowTr, a.gx, a.gy, hop, tilt);
+                }
             }
 
+            TickStationedWorkers(dt);
+            TickRanchPenAnimals(dt);
             TickCivilianVillagers(dt);
             if (Arena != null && Arena.IsBattleActive)
             {
@@ -2611,6 +3079,8 @@ namespace Mori.ForestSlice
                 if (v.cheerTimer > 0f)
                 {
                     v.cheerTimer = Mathf.Max(0f, v.cheerTimer - dt);
+                    v.flipbook?.ApplyTo(v.sr, dt, moving: true, speedMul: 1.25f);
+                    v.tr.localScale = new Vector3(v.baseScale, v.baseScale, 1f);
                     float jump = Mathf.Abs(Mathf.Sin(v.phase * 9.5f)) * 0.09f;
                     SyncActorTransform(v.tr, v.sr, v.shadowTr, v.gx, v.gy, jump, 0f);
                     continue;
@@ -2619,9 +3089,10 @@ namespace Mori.ForestSlice
                 if (v.pauseTimer > 0f)
                 {
                     v.pauseTimer -= dt;
-                    // 停驻烤火/歇息：只做温和呼吸缩放，绝不原地踏步！
+                    // 停驻烤火/歇息：稳落第 0 帧并做温和自然呼吸，绝不原地滑步！
+                    v.flipbook?.ApplyTo(v.sr, dt, moving: false);
                     float br = Mathf.Sin(v.phase * 2.6f);
-                    v.tr.localScale = new Vector3(0.68f * (1f - br * 0.008f), 0.68f * (1f + br * 0.012f), 1f);
+                    v.tr.localScale = new Vector3(v.baseScale * (1f - br * 0.008f), v.baseScale * (1f + br * 0.013f), 1f);
                     SyncActorTransform(v.tr, v.sr, v.shadowTr, v.gx, v.gy, 0f, 0f);
                     if (v.pauseTimer <= 0f)
                     {
@@ -2647,20 +3118,24 @@ namespace Mori.ForestSlice
                     if (!IsInsideClearedBoundary(ForestSliceView.Iso(nx, ny), 0.14f))
                     {
                         v.pauseTimer = 1.6f;
+                        v.flipbook?.ApplyTo(v.sr, dt, moving: false);
                         continue;
                     }
                     v.gx = nx;
                     v.gy = ny;
                     Vector3 sd = ForestSliceView.Iso(v.targetGx, v.targetGy) - ForestSliceView.Iso(v.gx, v.gy);
                     if (Mathf.Abs(sd.x) > 0.01f) v.sr.flipX = sd.x < 0f;
-                    float bob = Mathf.Abs(Mathf.Sin(v.phase * 7.2f)) * 0.032f;
-                    float tilt = Mathf.Sin(v.phase * 7.2f) * 2.6f;
-                    v.tr.localScale = new Vector3(0.68f, 0.68f, 1f);
+                    v.flipbook?.ApplyTo(v.sr, dt, moving: true);
+                    bool hasWalkStrip = v.flipbook != null && v.flipbook.IsLoaded;
+                    float bob = Mathf.Abs(Mathf.Sin(v.phase * 7.5f)) * (hasWalkStrip ? 0.015f : 0.032f);
+                    float tilt = Mathf.Sin(v.phase * 7.5f) * (hasWalkStrip ? 1.1f : 2.6f);
+                    v.tr.localScale = new Vector3(v.baseScale, v.baseScale, 1f);
                     SyncActorTransform(v.tr, v.sr, v.shadowTr, v.gx, v.gy, bob, tilt);
                 }
                 else
                 {
                     v.pauseTimer = 2.6f + (float)_rng.NextDouble() * 3.0f;
+                    v.flipbook?.ApplyTo(v.sr, dt, moving: false);
                 }
             }
         }
@@ -2718,7 +3193,7 @@ namespace Mori.ForestSlice
             if (_fishingActive || InWaveDefense) return;
             Vector3 wp = cam.ScreenToWorldPoint(new Vector3(screenPos.x, screenPos.y, 0f));
 
-            // 1. 优先精确点中营地外围猎物或游荡丧尸
+            // 1. 优先精确点中营地外围猎物或游荡丧尸（含 ForestSliceView 常驻林缘巡游鹿猪）
             for (int i = 0; i < WildActors.Count; i++)
             {
                 WildActor a = WildActors[i];
@@ -2729,6 +3204,16 @@ namespace Mori.ForestSlice
                     ResolveWildActor(a, autoByTower: false);
                     return;
                 }
+            }
+
+            if (View != null && View.TryHuntEdgeWildlifeAtWorld(wp, 0.52f, out Vector2 huntedEdgeGrid))
+            {
+                HasPendingChop = false;
+                bool archerBuff = Sim.FindHero("linyan")?.assigned == true;
+                Sim.Add(SurvRes.Meat, 4 + (archerBuff ? 2 : 0), true);
+                Sim.Add(SurvRes.Pelt, 3 + (archerBuff ? 1 : 0), true);
+                Sim.AddXp(12, huntedEdgeGrid);
+                return;
             }
 
             // 2. 精确点中头顶冒订单气泡的普通居民
