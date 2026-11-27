@@ -90,8 +90,9 @@ namespace Mori.ForestSlice.EditorTools
                     new EditorBuildSettingsScene(ScenePath, true)
                 };
 
-                // 2. 同步产品名称、竖屏朝向与选定 B 方案默认图标
-                PlayerSettings.productName = "末日囤货狂";
+                // 2. 同步认证标识符 (com.Luckygua.mori)、竖屏朝向与选定 B 方案默认图标
+                PlayerSettings.companyName = "Luckygua";
+                PlayerSettings.productName = "mori";
                 PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
                 var iconTex = AssetDatabase.LoadAssetAtPath<Texture2D>(AppIconPath);
                 if (iconTex != null)
